@@ -33,8 +33,14 @@ local C = {
     bg      = colors.black
 }
 
+-- Defensive setColor: if c is nil (e.g. from a typo like C.white
+-- when the table only has C.reset), just silently skip. Better than
+-- crashing the whole installer with "bad argument #1 (number expected,
+-- got nil)".
 local function setColor(c)
-    if term.isColor() then term.setTextColor(c) end
+    if c and term.isColor() then
+        term.setTextColor(c)
+    end
 end
 
 -- Helper for colored log lines. Defined early because preflightHTTP()
@@ -577,7 +583,7 @@ local function main()
     setColor(C.dim)
     print("  GitHub is reachable. Proceeding with installation.")
     print("")
-    setColor(C.white)
+    setColor(C.reset)
 
     if not confirm() then
         setColor(C.warn)
