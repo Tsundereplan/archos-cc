@@ -62,14 +62,19 @@ end
 -- CC:Tweaked's http.get() is synchronous and has no built-in timeout,
 -- so if GitHub doesn't reply (TLS handshake stuck, blocked domain, etc)
 -- the whole computer hangs. This version always times out.
+--
+-- While waiting for the response, we print a "." every ~2 seconds so
+-- the user sees that we're still alive.
 local function fetchURL(url, retries, timeoutSec)
     retries = retries or 3
     timeoutSec = timeoutSec or 10
     for attempt = 1, retries do
         -- Issue async request
         http.request(url)
-        -- Wait for http_success or http_failure (or our own timer)
-        local timer = os.startTimer(timeoutSec)
+        -- Heartbeat timer: print a dot every 2 seconds so the screen
+        -- does not look frozen during slow downloads.
+        local heartbeat = os.startTimer(2)
+        local deadline = os.startTimer(timeoutSec)
         local body = nil
         local failReason = nil
         while true do
@@ -80,19 +85,29 @@ local function fetchURL(url, retries, timeoutSec)
                     body = handle.readAll()
                     handle.close()
                 end
-                os.cancelTimer(timer)
+                os.cancelTimer(heartbeat)
+                os.cancelTimer(deadline)
                 break
             elseif ev[1] == "http_failure" and ev[2] == url then
                 failReason = ev[3] or "request failed"
-                os.cancelTimer(timer)
+                os.cancelTimer(heartbeat)
+                os.cancelTimer(deadline)
                 break
-            elseif ev[1] == "timer" and ev[2] == timer then
+            elseif ev[1] == "timer" and ev[2] == deadline then
                 failReason = "timeout after " .. timeoutSec .. "s"
                 break
+            elseif ev[1] == "timer" and ev[2] == heartbeat then
+                -- Heartbeat: print a dot to show we're still alive
+                term.write(".")
+                heartbeat = os.startTimer(2)
             end
         end
-        if body then return body end
-        setColor(C.warn); term.write(" (retry " .. attempt .. "/" .. retries .. ": " .. tostring(failReason) .. ") ")
+        if body then
+            -- Clear heartbeat dots by overwriting with spaces and returning
+            return body
+        end
+        setColor(C.warn)
+        term.write(" (retry " .. attempt .. "/" .. retries .. ": " .. tostring(failReason) .. ") ")
         if attempt < retries then os.sleep(0.5 * attempt) end
     end
     return nil
@@ -407,10 +422,23 @@ local function downloadManifest()
 end
 
 -- Stage 3: install each file
+-- We pass fetchProgressCallback to fetchURL so it can print dots while
+-- waiting for HTTP. This prevents the screen from looking "frozen"
+-- during slow downloads.
 local function installAll(fileList)
     local n = #fileList
     local ok, fail = 0, 0
     local failures = {}
+
+    -- Show a clear "starting downloads" banner so the user knows
+    -- something is happening even before the first file finishes.
+    setColor(C.head)
+    print("")
+    print("  ============================================")
+    print("  Downloading " .. n .. " files ...")
+    print("  ============================================")
+    print("")
+
     for i, rel in ipairs(fileList) do
         setColor(C.info)
         -- Shortened to fit on 51-wide screens: [NN/NN] path OK
@@ -419,8 +447,14 @@ local function installAll(fileList)
         if #pathDisplay > 36 then
             pathDisplay = "..." .. pathDisplay:sub(-33)
         end
-        term.write(string.format("  %-8s %-38s ", counter, pathDisplay))
+        term.write(string.format("  %-9s %-37s ", counter, pathDisplay))
+        -- Visual cue: spinner during fetch
+        term.write(".")
         local success, err = installFile(rel)
+        -- Clear the spinner dot
+        term.setCursorPos(term.getCursorPos() - 1, select(2, term.getCursorPos()))
+        term.write(" ")
+        term.setCursorPos(term.getCursorPos() - 1, select(2, term.getCursorPos()))
         if success then
             setColor(C.ok); term.write("OK\n")
             ok = ok + 1
@@ -561,7 +595,8 @@ local function main()
 
     if not http then
         setColor(C.err)
-        print("\n[FATAL] HTTP API is not enabled on this computer.")
+        print("")
+        print("[FATAL] HTTP API is not enabled on this computer.")
         print("        Enable it in computercraft-server.toml:")
         print('          [http]')
         print('          enabled = true')
@@ -569,11 +604,16 @@ local function main()
         return 1
     end
 
-    -- Run preflight HTTP check BEFORE asking for confirmation.
-    -- This way the user sees the diagnostic immediately, not after typing 'y'.
+    -- Stage 0: preflight HTTP check.
+    -- Run BEFORE asking for confirmation so the user sees the
+    -- diagnostic immediately, not after typing 'y'.
+    setColor(C.head)
+    print("  === Stage 0: Pre-flight check ===")
+    print("")
     if not preflightHTTP() then
         setColor(C.err)
-        print("\n  Pre-flight check failed. Installation aborted.")
+        print("")
+        print("  Pre-flight check failed. Installation aborted.")
         print("  See diagnostics above for how to fix.")
         return 1
     end
@@ -585,32 +625,55 @@ local function main()
     print("")
     setColor(C.reset)
 
+    -- Stage 1: confirm with user
+    setColor(C.head)
+    print("  === Stage 1: Confirm ===")
+    print("")
     if not confirm() then
         setColor(C.warn)
-        print("\n  Installation cancelled.")
+        print("")
+        print("  Installation cancelled.")
         return 1
     end
 
+    -- Stage 2: disk + manifest
+    setColor(C.head)
+    print("")
+    print("  === Stage 2: Disk check & manifest ===")
+    print("")
     preflight()
     local fileList = downloadManifest()
 
     -- Backup existing startup if present
     if fs.exists("/startup.lua") and not fs.exists("/startup.lua.bak") then
         fs.move("/startup.lua", "/startup.lua.bak")
-        setColor(C.dim); print("  Backed up existing /startup.lua to /startup.lua.bak")
+        setColor(C.dim)
+        print("  Backed up existing /startup.lua to /startup.lua.bak")
+        print("")
     end
 
+    -- Stage 3: download files (longest stage)
+    setColor(C.head)
+    print("  === Stage 3: Downloading files ===")
     local ok, fail, failures = installAll(fileList)
 
+    -- Stage 4: summary
     setColor(C.head)
-    print("\n  ============================================")
-    setColor(C.ok);   print(string.format("  Installed: %d files", ok))
+    print("")
+    print("  ============================================")
+    setColor(C.ok)
+    print(string.format("  Installed: %d files", ok))
     if fail > 0 then
-        setColor(C.err); print(string.format("  Failed:    %d files", fail))
+        setColor(C.err)
+        print(string.format("  Failed:    %d files", fail))
         setColor(C.dim)
-        for _, f in ipairs(failures) do print("    - " .. f[1] .. ": " .. tostring(f[2])) end
+        for _, f in ipairs(failures) do
+            print("    - " .. f[1] .. ": " .. tostring(f[2]))
+        end
     end
-    setColor(C.head); print("  ============================================")
+    setColor(C.head)
+    print("  ============================================")
+    print("")
 
     if fail > 0 and ok == 0 then
         setColor(C.err)
@@ -619,14 +682,33 @@ local function main()
         return 1
     end
 
+    -- Stage 5: post-install hooks
+    setColor(C.head)
+    print("  === Stage 5: Post-install hooks ===")
+    print("")
     postInstall()
+    print("")
+
+    -- Stage 6: register startup
+    setColor(C.head)
+    print("  === Stage 6: Register bootloader ===")
+    print("")
     registerStartup()
+    print("")
+
+    -- Stage 7: first-boot configuration
+    setColor(C.head)
+    print("  === Stage 7: First-boot setup ===")
+    print("")
     firstBootPrompt()
+    print("")
 
     setColor(C.ok)
-    print("\n  ArchOS-CC installed successfully!")
+    print("  ArchOS-CC installed successfully!")
+    print("")
     setColor(C.accent)
     print("  Rebooting in 3 seconds ... (press Ctrl+T to abort)")
+    print("")
     os.sleep(3)
     os.reboot()
 end

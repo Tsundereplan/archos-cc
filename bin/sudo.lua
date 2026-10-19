@@ -76,7 +76,8 @@ end
 local cmd = cmdArgs[1]
 local cmdPath = nil
 local searchPath = Kernel.getEnv("PATH") or "/bin:/sbin:/usr/bin"
-for dir in searchPath:gmatch("[^:]+") do
+for rawDir in searchPath:gmatch("[^:]+") do
+    local dir = rawDir
     if dir == "." then dir = Kernel.getCwd() end
     local candidate = dir .. "/" .. cmd
     if cmd:sub(-4) ~= ".lua" then candidate = candidate .. ".lua" end

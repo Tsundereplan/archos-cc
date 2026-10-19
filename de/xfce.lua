@@ -138,7 +138,8 @@ local function drawMenu()
     local w, h = term.getSize()
     local menuW = 24
     local menuH = 16
-    local x = 1, y = 2
+    local x = 1
+    local y = 2
 
     drawBox(1, 2, menuW, menuH, PALETTE.windowBg)
     -- Border

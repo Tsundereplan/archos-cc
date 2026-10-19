@@ -54,8 +54,8 @@ local function main()
     if fs.exists("/etc/issue") then
         local f = fs.open("/etc/issue", "r")
         if f then
-            for line in f.readLine do
-                line = line:gsub("\\n", "")
+            for rawLine in f.readLine do
+                local line = rawLine:gsub("\\n", "")
                 line = line:gsub("\\s", "ArchOS-CC")
                 line = line:gsub("\\h", _G.Network and _G.Network.hostname or "archos")
                 line = line:gsub("\\r", tostring(os.getComputerID()))

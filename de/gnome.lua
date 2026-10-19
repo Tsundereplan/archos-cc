@@ -25,7 +25,7 @@
       Super / Tab  : open Activities overview
       Right-click  : desktop context menu
       Click top bar : system menu
-"""
+--]]
 
 local GNOME = {}
 

@@ -20,20 +20,38 @@
 
 local args = arg or {...}
 
--- bit32 helpers (CC:Tweaked provides bit32; Lua 5.3+ has native bit ops)
-local bit
-if bit32 then
-    bit = bit32
-else
-    -- Minimal fallback for Lua 5.3+ if bit32 isn't loaded
-    bit = {
-        band = function(a, b) return a & b end,
-        bor = function(a, b) return a | b end,
-        bxor = function(a, b) return a ~ b end,
-        blshift = function(a, n) return a << n end,
-        brshift = function(a, n) return a >> n end,
-    }
-end
+-- bit32 helpers (CC:Tweaked provides bit32; Lua 5.1 compatible)
+-- NOTE: do NOT use Lua 5.3 bitwise operators (&, |, ~, <<, >>) anywhere
+-- in this file. CC:Tweaked uses Lua 5.1 (Cobalt) which doesn't parse them.
+local bit = bit32 or {
+    -- Arithmetic fallback (slow but correct) if bit32 is missing.
+    band = function(a, b)
+        local r, p = 0, 1
+        for _ = 1, 32 do
+            if a % 2 == 1 and b % 2 == 1 then r = r + p end
+            a = math.floor(a / 2); b = math.floor(b / 2); p = p * 2
+        end
+        return r
+    end,
+    bor = function(a, b)
+        local r, p = 0, 1
+        for _ = 1, 32 do
+            if a % 2 == 1 or b % 2 == 1 then r = r + p end
+            a = math.floor(a / 2); b = math.floor(b / 2); p = p * 2
+        end
+        return r
+    end,
+    bxor = function(a, b)
+        local r, p = 0, 1
+        for _ = 1, 32 do
+            if (a % 2) ~= (b % 2) then r = r + p end
+            a = math.floor(a / 2); b = math.floor(b / 2); p = p * 2
+        end
+        return r
+    end,
+    blshift = function(a, n) return (a * 2^n) % 4294967296 end,
+    brshift = function(a, n) return math.floor(a / 2^n) % 4294967296 end,
+}
 
 -- Colour helpers
 local function setFG(c) if term.isColor() then term.setTextColor(c) end end

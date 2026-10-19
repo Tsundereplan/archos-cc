@@ -59,7 +59,8 @@ function Pacman.loadLocalDb()
                     for line in content:gmatch("[^\n]+") do
                         local k, v = line:match("^([^=]+)=(.*)$")
                         if k and v then
-                            pkg[k:trim and k:trim() or k] = v
+                            local key = k
+                            pkg[key] = v
                         end
                     end
                     -- Load files list

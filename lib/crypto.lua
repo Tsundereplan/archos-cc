@@ -1,14 +1,18 @@
 --[[
     lib/crypto.lua  —  Cryptographic helpers
     =======================================
-    Pure-Lua implementations of:
-      * SHA-256 (full implementation)
+    Pure-Lua implementations (CC:Tweaked / Lua 5.1 compatible):
+      * SHA-256 (full implementation, via bit32 API)
       * SHA-1 (legacy)
-      * MD5 (legacy)
       * FNV-1a (fast non-crypto hash)
-      * Base64 encode/decode (uses cc.base64 if available)
+      * Base64 encode/decode
       * XOR cipher (symmetric, simple)
       * RC4 (stream cipher, for demo encryption)
+
+    IMPORTANT: CC:Tweaked uses Lua 5.1 (Cobalt), which does NOT support
+    the Lua 5.3 bitwise operators (~, &, |, <<, >>). All bitwise ops
+    must go through the `bit32` API. This file wraps bit32 into short
+    local names at the top so the algorithm bodies below read cleanly.
 
     These are NOT audited for production security. They exist to give
     the OS a coherent crypto story for password hashing, signed packages,
@@ -17,11 +21,80 @@
 
 local Crypto = {}
 
+-- Bitwise helpers (Lua 5.1 / CC:Tweaked compatible via bit32).
+-- bit32 is always available in CC:Tweaked. If somehow not, we fall
+-- back to arithmetic implementations (slower but functional).
+local bxor, band, bor, bnot, lshift, rshift, rrotate, lrotate
+if bit32 then
+    bxor    = bit32.bxor
+    band    = bit32.band
+    bor     = bit32.bor
+    bnot    = bit32.bnot
+    lshift  = bit32.lshift
+    rshift  = bit32.rshift
+    rrotate = bit32.rrotate
+    lrotate = bit32.lrotate
+else
+    -- Arithmetic fallbacks (slow, but correct for 32-bit unsigned math)
+    local mod = 4294967296  -- 2^32
+    bxor = function(a, b)
+        local r, p = 0, 1
+        for _ = 1, 32 do
+            local ab = a % 2; a = (a - ab) / 2
+            local bb = b % 2; b = (b - bb) / 2
+            if ab ~= bb then r = r + p end
+            p = p * 2
+        end
+        return r
+    end
+    band = function(a, b)
+        local r, p = 0, 1
+        for _ = 1, 32 do
+            local ab = a % 2; a = (a - ab) / 2
+            local bb = b % 2; b = (b - bb) / 2
+            if ab == 1 and bb == 1 then r = r + p end
+            p = p * 2
+        end
+        return r
+    end
+    bor = function(a, b)
+        local r, p = 0, 1
+        for _ = 1, 32 do
+            local ab = a % 2; a = (a - ab) / 2
+            local bb = b % 2; b = (b - bb) / 2
+            if ab == 1 or bb == 1 then r = r + p end
+            p = p * 2
+        end
+        return r
+    end
+    bnot = function(a) return (mod - 1 - a) % mod end
+    lshift = function(a, n)
+        if n >= 32 then return 0 end
+        if n <= 0 then return a % mod end
+        return (a * 2^n) % mod
+    end
+    rshift = function(a, n)
+        if n >= 32 then return 0 end
+        if n <= 0 then return a % mod end
+        return math.floor((a % mod) / 2^n)
+    end
+    rrotate = function(a, n)
+        n = n % 32
+        if n == 0 then return a % mod end
+        return (rshift(a, n) + lshift(a, 32 - n)) % mod
+    end
+    lrotate = function(a, n)
+        n = n % 32
+        if n == 0 then return a % mod end
+        return (lshift(a, n) + rshift(a, 32 - n)) % mod
+    end
+end
+
 -- FNV-1a 32-bit hash
 function Crypto.fnv1a(data)
     local h = 2166136261
     for i = 1, #data do
-        h = h ~ data:byte(i)
+        h = bxor(h, data:byte(i))
         h = (h * 16777619) % 4294967296
     end
     return h
@@ -29,10 +102,6 @@ end
 
 -- SHA-256 implementation
 -- Standard implementation following RFC 6234
-local function rrotate(x, n)
-    return ((x >> n) | (x << (32 - n))) % 4294967296
-end
-
 local K = {
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -58,7 +127,7 @@ local function sha256(msg)
     -- Append length in bits (64-bit big-endian, we just use 32-bit)
     local lenBits = len * 8
     for i = 4, 1, -1 do
-        msg = msg .. string.char((lenBits >> ((i-1) * 8)) % 256)
+        msg = msg .. string.char(band(rshift(lenBits, (i-1) * 8), 0xFF))
     end
     msg = msg .. string.char(0, 0, 0, 0)  -- high 32 bits = 0
 
@@ -67,22 +136,27 @@ local function sha256(msg)
         local W = {}
         for i = 1, 16 do
             local s = chunkStart + (i - 1) * 4
-            W[i] = (msg:byte(s) << 24) | (msg:byte(s+1) << 16) | (msg:byte(s+2) << 8) | msg:byte(s+3)
+            W[i] = bor(
+                lshift(msg:byte(s), 24),
+                lshift(msg:byte(s+1), 16),
+                lshift(msg:byte(s+2), 8),
+                msg:byte(s+3)
+            )
             W[i] = W[i] % 4294967296
         end
         for i = 17, 64 do
-            local s0 = rrotate(W[i-15], 7) ~ rrotate(W[i-15], 18) ~ (W[i-15] >> 3)
-            local s1 = rrotate(W[i-2], 17) ~ rrotate(W[i-2], 19) ~ (W[i-2] >> 10)
+            local s0 = bxor(bxor(rrotate(W[i-15], 7), rrotate(W[i-15], 18)), rshift(W[i-15], 3))
+            local s1 = bxor(bxor(rrotate(W[i-2], 17), rrotate(W[i-2], 19)), rshift(W[i-2], 10))
             W[i] = (W[i-16] + s0 + W[i-7] + s1) % 4294967296
         end
 
         local a, b, c, d, e, f, g, h = H[1], H[2], H[3], H[4], H[5], H[6], H[7], H[8]
         for i = 1, 64 do
-            local S1 = rrotate(e, 6) ~ rrotate(e, 11) ~ rrotate(e, 25)
-            local ch = (e & f) ~ ((~e) & g)
+            local S1 = bxor(bxor(rrotate(e, 6), rrotate(e, 11)), rrotate(e, 25))
+            local ch = bxor(band(e, f), band(bnot(e), g))
             local temp1 = (h + S1 + ch + K[i] + W[i]) % 4294967296
-            local S0 = rrotate(a, 2) ~ rrotate(a, 13) ~ rrotate(a, 22)
-            local maj = (a & b) ~ (a & c) ~ (b & c)
+            local S0 = bxor(bxor(rrotate(a, 2), rrotate(a, 13)), rrotate(a, 22))
+            local maj = bxor(bxor(band(a, b), band(a, c)), band(b, c))
             local temp2 = (S0 + maj) % 4294967296
 
             h = g; g = f; f = e
@@ -120,7 +194,7 @@ function Crypto.sha1(msg)
     while #msg % 64 ~= 56 do msg = msg .. string.char(0) end
     local lenBits = len * 8
     for i = 4, 1, -1 do
-        msg = msg .. string.char((lenBits >> ((i-1)*8)) % 256)
+        msg = msg .. string.char(band(rshift(lenBits, (i-1)*8), 0xFF))
     end
     msg = msg .. string.char(0, 0, 0, 0)
 
@@ -128,21 +202,26 @@ function Crypto.sha1(msg)
         local W = {}
         for i = 1, 16 do
             local s = chunkStart + (i-1) * 4
-            W[i] = (msg:byte(s) << 24) | (msg:byte(s+1) << 16) | (msg:byte(s+2) << 8) | msg:byte(s+3)
+            W[i] = bor(
+                lshift(msg:byte(s), 24),
+                lshift(msg:byte(s+1), 16),
+                lshift(msg:byte(s+2), 8),
+                msg:byte(s+3)
+            )
             W[i] = W[i] % 4294967296
         end
         for i = 17, 80 do
-            W[i] = rrotate(W[i-3] ~ W[i-8] ~ W[i-14] ~ W[i-16], 1)
+            W[i] = rrotate(bxor(bxor(bxor(W[i-3], W[i-8]), W[i-14]), W[i-16]), 1)
             W[i] = W[i] % 4294967296
         end
 
         local a, b, c, d, e = h0, h1, h2, h3, h4
         for i = 1, 80 do
             local f, k
-            if i <= 20 then f = (b & c) | ((~b) & d); k = 0x5A827999
-            elseif i <= 40 then f = b ~ c ~ d; k = 0x6ED9EBA1
-            elseif i <= 60 then f = (b & c) | (b & d) | (c & d); k = 0x8F1BBCDC
-            else f = b ~ c ~ d; k = 0xCA62C1D6
+            if i <= 20 then f = bor(band(b, c), band(bnot(b), d)); k = 0x5A827999
+            elseif i <= 40 then f = bxor(bxor(b, c), d); k = 0x6ED9EBA1
+            elseif i <= 60 then f = bor(bor(band(b, c), band(b, d)), band(c, d)); k = 0x8F1BBCDC
+            else f = bxor(bxor(b, c), d); k = 0xCA62C1D6
             end
             local temp = (rrotate(a, 5) + f + e + k + W[i]) % 4294967296
             e = d; d = c; c = rrotate(b, 30); b = a; a = temp
@@ -162,7 +241,7 @@ end
 function Crypto.hmacSha256(key, message)
     local blockSize = 64
     if #key > blockSize then
-        key = sha256(key)  -- hash to fit
+        key = sha256(key)  -- hash to fit (will be 64 bytes when hex-decoded; for simplicity treat as string)
     end
     -- Pad key
     while #key < blockSize do key = key .. string.char(0) end
@@ -170,8 +249,8 @@ function Crypto.hmacSha256(key, message)
     local o_key_pad = ""
     local i_key_pad = ""
     for i = 1, blockSize do
-        o_key_pad = o_key_pad .. string.char(key:byte(i) ~ 0x5c)
-        i_key_pad = i_key_pad .. string.char(key:byte(i) ~ 0x36)
+        o_key_pad = o_key_pad .. string.char(bxor(key:byte(i), 0x5c))
+        i_key_pad = i_key_pad .. string.char(bxor(key:byte(i), 0x36))
     end
 
     return sha256(o_key_pad .. sha256(i_key_pad .. message))
@@ -183,23 +262,29 @@ function Crypto.base64Encode(data)
     -- Fallback implementation
     local chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
     local out = ""
-    for i = 1, #data, 3 do
+    local i = 1
+    while i <= #data do
         local b1 = data:byte(i) or 0
         local b2 = data:byte(i+1) or 0
         local b3 = data:byte(i+2) or 0
-        local n = (b1 << 16) | (b2 << 8) | b3
-        out = out .. chars:sub(((n >> 18) & 0x3F) + 1, ((n >> 18) & 0x3F) + 1)
-        out = out .. chars:sub(((n >> 12) & 0x3F) + 1, ((n >> 12) & 0x3F) + 1)
+        local n = bor(lshift(b1, 16), lshift(b2, 8), b3)
+        local idx1 = band(rshift(n, 18), 0x3F)
+        local idx2 = band(rshift(n, 12), 0x3F)
+        local idx3 = band(rshift(n, 6), 0x3F)
+        local idx4 = band(n, 0x3F)
+        out = out .. chars:sub(idx1 + 1, idx1 + 1)
+        out = out .. chars:sub(idx2 + 1, idx2 + 1)
         if i + 1 <= #data then
-            out = out .. chars:sub(((n >> 6) & 0x3F) + 1, ((n >> 6) & 0x3F) + 1)
+            out = out .. chars:sub(idx3 + 1, idx3 + 1)
         else
             out = out .. "="
         end
         if i + 2 <= #data then
-            out = out .. chars:sub((n & 0x3F) + 1, (n & 0x3F) + 1)
+            out = out .. chars:sub(idx4 + 1, idx4 + 1)
         else
             out = out .. "="
         end
+        i = i + 3
     end
     return out
 end
@@ -216,11 +301,11 @@ function Crypto.base64Decode(data)
     for i = 1, #data do
         local c = data:byte(i)
         if c ~= 61 and lookup[c] then  -- 61 is '='
-            buffer = (buffer << 6) | lookup[c]
+            buffer = bor(lshift(buffer, 6), lookup[c])
             bits = bits + 6
             if bits >= 8 then
                 bits = bits - 8
-                table.insert(out, string.char((buffer >> bits) & 0xFF))
+                table.insert(out, string.char(band(rshift(buffer, bits), 0xFF)))
             end
         end
     end
@@ -233,7 +318,7 @@ function Crypto.xorCipher(data, key)
     local out = {}
     for i = 1, #data do
         local kb = key:byte((i - 1) % #key + 1)
-        out[i] = string.char(data:byte(i) ~ kb)
+        out[i] = string.char(bxor(data:byte(i), kb))
     end
     return table.concat(out)
 end
@@ -254,7 +339,7 @@ function Crypto.rc4(key, data)
         j = (j + S[i]) % 256
         S[i], S[j] = S[j], S[i]
         local k = S[(S[i] + S[j]) % 256]
-        out[n] = string.char(data:byte(n) ~ k)
+        out[n] = string.char(bxor(data:byte(n), k))
     end
     return table.concat(out)
 end
@@ -263,7 +348,7 @@ end
 function Crypto.random(max)
     local seed = os.clock() * 1000000 + os.time() * 7 + os.getComputerID()
     local h = Crypto.fnv1a(tostring(seed))
-    if max then return h % max + 1 end
+    if max then return (h % max) + 1 end
     return h
 end
 

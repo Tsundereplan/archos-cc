@@ -69,8 +69,8 @@ function Systemd.parseService(name)
         restart = "no",
     }
     local section = nil
-    for line in content:gmatch("[^\r\n]+") do
-        line = line:gsub("^%s+", ""):gsub("%s+$", "")
+    for rawLine in content:gmatch("[^\r\n]+") do
+        local line = rawLine:gsub("^%s+", ""):gsub("%s+$", "")
         if line == "" or line:sub(1, 1) == "#" or line:sub(1, 1) == ";" then
             -- skip
         elseif line:sub(1, 1) == "[" and line:sub(-1) == "]" then

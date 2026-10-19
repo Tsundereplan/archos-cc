@@ -161,7 +161,8 @@ function Shell.findExecutable(cmd)
         return nil
     end
     local path = _G.Kernel and _G.Kernel.getEnv("PATH") or "/bin:/sbin:/usr/bin"
-    for dir in path:gmatch("[^:]+") do
+    for rawDir in path:gmatch("[^:]+") do
+        local dir = rawDir
         if dir == "." then dir = _G.Kernel.getCwd() end
         local candidate = dir .. "/" .. cmd
         if cmd:sub(-4) ~= ".lua" then

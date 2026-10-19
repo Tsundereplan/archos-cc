@@ -232,15 +232,23 @@ end
 -- Custom string hash (since CC:Tweaked has no built-in crypto)
 -- Uses a 256-bit FNV-1a variant with extra mixing rounds.
 -- NOT cryptographically secure but adequate for OS demo.
+--
+-- IMPORTANT: CC:Tweaked uses Lua 5.1 (Cobalt) which does NOT support
+-- the Lua 5.3 bitwise operators (~, &, |, <<, >>). We must use the
+-- `bit32` API instead: bit32.bxor, bit32.band, bit32.bor, bit32.lshift,
+-- bit32.rshift, bit32.rrotate. All values are kept as 32-bit unsigned.
 local function fnv1a(data)
+    local bxor = bit32 and bit32.bxor or function(a, b) return a end  -- fallback
+    local rshift = bit32 and bit32.rshift or function(a, n) return math.floor(a / 2^n) end
+    local lshift = bit32 and bit32.lshift or function(a, n) return (a * 2^n) % 4294967296 end
     local h = 2166136261
     for i = 1, #data do
-        h = h ~ data:byte(i)
+        h = bxor(h, data:byte(i))
         h = (h * 16777619) % 4294967296
     end
     -- Mix with another round
     for _ = 1, 5 do
-        h = h ~ ((h >> 13) ~ (h << 7))
+        h = bxor(h, bxor(rshift(h, 13), lshift(h, 7)))
         h = h % 4294967296
     end
     return h
