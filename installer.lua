@@ -37,6 +37,61 @@ local function setColor(c)
     if term.isColor() then term.setTextColor(c) end
 end
 
+-- Helper for colored log lines. Defined early because preflightHTTP()
+-- uses it. (In Lua, `local function` is not hoisted - it must appear
+-- in the source before the first call.)
+local function log(level, msg, color)
+    local prefix = ""
+    if     level == "ok"   then prefix = " [OK]   "; color = color or C.ok
+    elseif level == "err"  then prefix = " [ERR]  "; color = color or C.err
+    elseif level == "warn" then prefix = " [WARN] "; color = color or C.warn
+    else                        prefix = " [INFO] "; color = color or C.info
+    end
+    setColor(color)
+    term.write(prefix .. msg .. "\n")
+end
+
+-- HTTP download with retries and proper timeout.
+-- Uses http.request() (async) + os.pullEvent() so we never block forever.
+-- CC:Tweaked's http.get() is synchronous and has no built-in timeout,
+-- so if GitHub doesn't reply (TLS handshake stuck, blocked domain, etc)
+-- the whole computer hangs. This version always times out.
+local function fetchURL(url, retries, timeoutSec)
+    retries = retries or 3
+    timeoutSec = timeoutSec or 10
+    for attempt = 1, retries do
+        -- Issue async request
+        http.request(url)
+        -- Wait for http_success or http_failure (or our own timer)
+        local timer = os.startTimer(timeoutSec)
+        local body = nil
+        local failReason = nil
+        while true do
+            local ev = { os.pullEvent() }
+            if ev[1] == "http_success" and ev[2] == url then
+                local handle = ev[3]
+                if handle then
+                    body = handle.readAll()
+                    handle.close()
+                end
+                os.cancelTimer(timer)
+                break
+            elseif ev[1] == "http_failure" and ev[2] == url then
+                failReason = ev[3] or "request failed"
+                os.cancelTimer(timer)
+                break
+            elseif ev[1] == "timer" and ev[2] == timer then
+                failReason = "timeout after " .. timeoutSec .. "s"
+                break
+            end
+        end
+        if body then return body end
+        setColor(C.warn); term.write(" (retry " .. attempt .. "/" .. retries .. ": " .. tostring(failReason) .. ") ")
+        if attempt < retries then os.sleep(0.5 * attempt) end
+    end
+    return nil
+end
+
 local function banner()
     term.clear()
     term.setCursorPos(1, 1)
@@ -248,58 +303,6 @@ local MANIFEST = {
     "LICENSE",
     ".gitignore",
 }
-
-local function log(level, msg, color)
-    local prefix = ""
-    if level == "ok"   then prefix = " [OK]   "; color = color or C.ok
-    elseif level == "err"  then prefix = " [ERR]  "; color = color or C.err
-    elseif level == "warn" then prefix = " [WARN] "; color = color or C.warn
-    else                     prefix = " [INFO] "; color = color or C.info
-    end
-    setColor(color)
-    term.write(prefix .. msg .. "\n")
-end
-
--- HTTP download with retries and proper timeout.
--- Uses http.request() (async) + os.pullEvent() so we never block forever.
--- CC:Tweaked's http.get() is synchronous and has no built-in timeout,
--- so if GitHub doesn't reply (TLS handshake stuck, blocked domain, etc)
--- the whole computer hangs. This version always times out.
-local function fetchURL(url, retries, timeoutSec)
-    retries = retries or 3
-    timeoutSec = timeoutSec or 10
-    for attempt = 1, retries do
-        -- Issue async request
-        http.request(url)
-        -- Wait for http_success or http_failure (or our own timer)
-        local timer = os.startTimer(timeoutSec)
-        local body = nil
-        local failReason = nil
-        while true do
-            local ev = { os.pullEvent() }
-            if ev[1] == "http_success" and ev[2] == url then
-                local handle = ev[3]
-                if handle then
-                    body = handle.readAll()
-                    handle.close()
-                end
-                os.cancelTimer(timer)
-                break
-            elseif ev[1] == "http_failure" and ev[2] == url then
-                failReason = ev[3] or "request failed"
-                os.cancelTimer(timer)
-                break
-            elseif ev[1] == "timer" and ev[2] == timer then
-                failReason = "timeout after " .. timeoutSec .. "s"
-                break
-            end
-        end
-        if body then return body end
-        setColor(C.warn); term.write(" (retry " .. attempt .. "/" .. retries .. ": " .. tostring(failReason) .. ") ")
-        if attempt < retries then os.sleep(0.5 * attempt) end
-    end
-    return nil
-end
 
 local function ensureDir(path)
     -- path like "/bios" or "/lib/drivers"
@@ -524,6 +527,30 @@ end
 
 -- Main
 local function main()
+    -- Detect missing arguments BEFORE showing the banner, so the user
+    -- sees a clear "how to use" message instead of a broken banner with
+    -- placeholder values like "your-github-username".
+    if not arg[1] or arg[1] == "" then
+        term.clear()
+        term.setCursorPos(1, 1)
+        if term.isColor() then term.setTextColor(colors.lightBlue) end
+        print("    ArchOS-CC Installer")
+        if term.isColor() then term.setTextColor(colors.yellow) end
+        print("")
+        print("  ERROR: no GitHub username specified.")
+        print("")
+        if term.isColor() then term.setTextColor(colors.white) end
+        print("  Usage:")
+        print("    installer <github-user> <repo-name> [branch]")
+        print("")
+        print("  Example:")
+        print("    installer Tsundereplan archos-cc main")
+        print("")
+        if term.isColor() then term.setTextColor(colors.gray) end
+        print("  Make sure the repo is PUBLIC and the branch exists.")
+        return 1
+    end
+
     banner()
 
     if not http then
