@@ -1,0 +1,19 @@
+# /etc/locale/en.lc  —  English locale definition
+# Used by future locale-aware code.
+
+LANG=en
+LANGUAGE=en
+LC_CTYPE=en
+LC_NUMERIC=en
+LC_TIME=en
+LC_COLLATE=en
+LC_MONETARY=en
+LC_MESSAGES=en
+LC_PAPER=en
+LC_NAME=en
+LC_ADDRESS=en
+LC_TELEPHONE=en
+LC_MEASUREMENT=en
+LC_IDENTIFICATION=en
+DATE_FORMAT=%Y-%m-%d %H:%M:%S
+TIME_FORMAT=%H:%M:%S

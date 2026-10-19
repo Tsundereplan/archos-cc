@@ -1,0 +1,8 @@
+# /etc/fstab  —  File system table
+# Format: <mount point>  <device/source>  <options>
+# CC:Tweaked auto-mounts disk drives to /disk, /disk2 etc.
+# This file is read by /sbin/init.lua on boot.
+
+/                <root>          rw
+/mnt/d0          disk_0          rw
+/mnt/d1          disk_1          rw

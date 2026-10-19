@@ -1,0 +1,12 @@
+[Unit]
+Description=Plug-and-Play device manager
+After=networkd.service
+
+[Service]
+Type=simple
+ExecStart=/bin/sh.lua -c "exec /usr/bin/sysmgr.lua"
+Restart=on-failure
+User=root
+
+[Install]
+WantedBy=multi-user.target

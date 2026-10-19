@@ -1,0 +1,72 @@
+--[[
+    startup.lua  —  ArchOS-CC entry point
+    =======================================
+    This file is automatically executed by ComputerCraft: Tweaked when the
+    computer boots. It does the minimum work required to hand control over
+    to the ArchOS-CC bootloader.
+
+    Responsibilities:
+      1. Stash the original CraftOS environment (we don't delete it, we
+         shadow it via /bin/sh.lua and /lib/*).
+      2. Print a short boot banner.
+      3. Load /bootloader/bootloader.lua and run it. The bootloader is
+         OS-agnostic: it scans /bootloader/entries/ for installed systems
+         and lets the user pick one. ArchOS-CC is just one of them.
+]]
+
+local function setColor(c)
+    if term.isColor() then term.setTextColor(c) end
+end
+
+-- Quiet the screen and reset
+term.clear()
+term.setCursorPos(1, 1)
+setColor(colors.lightBlue)
+print("    ___                     ____   ____  _  __")
+print("   /   | ______ __ ___     /  _/  / __ \\/ |/ /")
+print("  / /| |/ __/ / / // (_-<    / /   / /_/ /    / ")
+print(" /_/ |_|/_/  /_//_/___/   /___/  /____/_/|_/  ")
+setColor(colors.gray)
+print("  startup -> bootloader")
+print("")
+
+-- Sanity check: is the bootloader present?
+if not fs.exists("/bootloader/bootloader.lua") then
+    setColor(colors.red)
+    print("[FATAL] /bootloader/bootloader.lua not found!")
+    print("        The system cannot continue booting.")
+    print("")
+    setColor(colors.yellow)
+    print("  Possible reasons:")
+    print("    * ArchOS-CC was not installed yet (run installer)")
+    print("    * The bootloader file was deleted")
+    print("    * Disk corruption - run a disk-check from another computer")
+    print("")
+    setColor(colors.white)
+    print("  Falling back to CraftOS shell in 5 seconds...")
+    os.sleep(5)
+    -- Fall back to the default CraftOS shell (do nothing, CC will load shell)
+    return
+end
+
+-- Load and run the bootloader
+setColor(colors.gray)
+print("[startup] Handing off to bootloader ...")
+local ok, err = pcall(function()
+    local bootloader = dofile("/bootloader/bootloader.lua")
+    if type(bootloader) == "function" then
+        bootloader()
+    elseif type(bootloader) == "table" and bootloader.run then
+        bootloader.run()
+    end
+end)
+
+if not ok then
+    setColor(colors.red)
+    print("[FATAL] Bootloader crashed: " .. tostring(err))
+    print("")
+    setColor(colors.yellow)
+    print("  Falling back to CraftOS shell in 5 seconds...")
+    os.sleep(5)
+    -- Don't reboot - let user inspect the shell
+end

@@ -1,0 +1,12 @@
+[Unit]
+Description=Network Daemon
+After=mountd.service
+
+[Service]
+Type=simple
+ExecStart=/sbin/networkd.lua
+Restart=on-failure
+User=root
+
+[Install]
+WantedBy=multi-user.target

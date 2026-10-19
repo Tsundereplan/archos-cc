@@ -1,0 +1,28 @@
+# /etc/profile  —  System-wide shell profile
+# Executed by /bin/sh.lua on each interactive login shell.
+
+# Default PATH
+export PATH=/bin:/sbin:/usr/bin:/usr/local/bin:.
+
+# Default prompt (overrides KERNEL default)
+if [ -z "$PS1" ]; then
+    if [ "$USER" = "root" ]; then
+        export PS1="[\\u@\\h \\W]# "
+    else
+        export PS1="[\\u@\\h \\W]\\$ "
+    fi
+fi
+
+# Set TERM
+export TERM=tty
+
+# Aliases (built-in to shell, but we set defaults here)
+# (alias command would need to be a builtin in sh.lua - we set them via the alias table)
+
+# Welcome message on first login of the day
+if [ -f /etc/motd ]; then
+    cat /etc/motd
+fi
+
+# Load ~/.profile if it exists
+# (handled by sh.lua directly)

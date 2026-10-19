@@ -1,0 +1,18 @@
+# /etc/motd  —  Message of the day
+
+  ___                     ____   ____  _  __
+ /   | ______ __ ___     /  _/  / __ \/ |/ /
+/ /| |/ __/ / // (_-<    / /   / /_/ /    /
+/_/ |_|/_/  /_//_/___/   /___/  /____/_/|_/
+
+  Welcome to ArchOS-CC 1.0.0
+
+  * Documentation:  https://github.com/YOUR_USER/archos-cc
+  * Bug reports:    https://github.com/YOUR_USER/archos-cc/issues
+
+  System information as of <DATE>:
+  - Computer ID: <ID>
+  - Free disk space: <DISK> bytes
+  - Network: <NETSTATUS>
+
+  Last login: <LASTLOGIN>

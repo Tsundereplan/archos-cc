@@ -1,0 +1,11 @@
+NAME="ArchOS-CC"
+VERSION="1.0.0 (Quartz)"
+VERSION_ID=1.0
+PRETTY_NAME="ArchOS-CC 1.0.0 (Quartz)"
+ID=archos-cc
+ID_LIKE=arch
+ANSI_COLOR="0;36"
+HOME_URL="https://github.com/YOUR_USER/archos-cc"
+DOCUMENTATION_URL="https://github.com/YOUR_USER/archos-cc/docs"
+SUPPORT_URL="https://github.com/YOUR_USER/archos-cc/issues"
+BUILD_ID=2026.10
