@@ -41,16 +41,83 @@ local function banner()
     term.clear()
     term.setCursorPos(1, 1)
     setColor(C.head)
-    print("    ___                     ____   ____  _  __")
-    print("   /   | ______ __ ___     /  _/  / __ \\/ |/ /")
-    print("  / /| |/ __/ / // (_-<    / /   / /_/ /    / ")
-    print(" /_/ |_|/_/  /_//_/___/   /___/  /____/_/|_/  ")
+    -- Compact banner that fits on a 51x19 Advanced Computer screen.
+    print("    ___               ____   ____  _  __")
+    print("   /   | ______ __ ___/  _/  / __ \\/ |/ /")
+    print("  / /| |/ __/ / // (_-< /    / /_/ /    /  ")
+    print(" /_/ |_|/_/  /_//_/___/___/  /____/_/|_/  ")
     setColor(C.accent)
-    print("   ComputerCraft Operating System - Arch Linux style")
+    print(" ArchOS-CC installer - Arch Linux style OS")
     print("")
     setColor(C.dim)
-    print("  Repository: " .. GITHUB_USER .. "/" .. GITHUB_REPO .. " @ " .. GITHUB_BRANCH)
+    print(" Repo: " .. GITHUB_USER .. "/" .. GITHUB_REPO .. " @" .. GITHUB_BRANCH)
     print("")
+end
+
+-- Pre-flight diagnostic: make sure HTTP works at all before we start
+-- downloading 100+ files. This catches the most common CC:Tweaked issues:
+--   * http API not enabled in computercraft-server.toml
+--   * Domain not in the http whitelist
+--   * No internet connection at all
+local function preflightHTTP()
+    setColor(C.info)
+    log("info", "HTTP preflight check ...")
+    if not http then
+        setColor(C.err)
+        log("err", "HTTP API is NOT available on this computer.")
+        setColor(C.accent)
+        print("")
+        print("  To enable HTTP:")
+        print("  1. Stop the Minecraft server")
+        print("  2. Open config/computercraft-server.toml")
+        print("  3. Set [http].enabled = true")
+        print("  4. Add raw.githubusercontent.com to [[http.rules]]:")
+        print('       { host = "raw.githubusercontent.com", action = "allow" }')
+        print('       { host = "*", action = "deny" }')
+        print("  5. Restart the server")
+        return false
+    end
+    if not http.request then
+        setColor(C.err)
+        log("err", "http.request not available (CC:T version too old?)")
+        return false
+    end
+
+    -- Try a tiny HEAD-like probe with a short timeout
+    local probeURL = GITHUB_RAW .. "MANIFEST"
+    setColor(C.dim)
+    term.write("  probing " .. probeURL .. " ... ")
+    local body = fetchURL(probeURL, 1, 8)
+    if body then
+        setColor(C.ok); print("OK")
+        setColor(C.dim); print("    (got " .. #body .. " bytes from MANIFEST)")
+        return true
+    else
+        setColor(C.err); print("FAIL")
+        setColor(C.warn)
+        print("")
+        print("  Cannot reach GitHub. Common causes:")
+        print("")
+        print("  1. HTTP not enabled in computercraft-server.toml:")
+        print('       [http]')
+        print('       enabled = true')
+        print("")
+        print("  2. Domain whitelist blocks raw.githubusercontent.com.")
+        print("     Add to [[http.rules]] in computercraft-server.toml:")
+        print('       { host = "raw.githubusercontent.com", action = "allow" }')
+        print('       { host = "github.com", action = "allow" }')
+        print('       { host = "api.github.com", action = "allow" }')
+        print('       { host = "*", action = "deny" }')
+        print("")
+        print("  3. Server has no internet, or firewall blocks HTTPS (port 443).")
+        print("")
+        print("  4. Repo is private or branch name is wrong.")
+        print("     Current: " .. GITHUB_USER .. "/" .. GITHUB_REPO .. " @ " .. GITHUB_BRANCH)
+        print("")
+        setColor(C.accent)
+        print("  Fix the above, then re-run: installer " .. GITHUB_USER .. " " .. GITHUB_REPO .. " " .. GITHUB_BRANCH)
+        return false
+    end
 end
 
 -- File manifest: list of all files (relative paths) that compose the OS.
@@ -193,18 +260,43 @@ local function log(level, msg, color)
     term.write(prefix .. msg .. "\n")
 end
 
--- HTTP download with retries
-local function fetchURL(url, retries)
+-- HTTP download with retries and proper timeout.
+-- Uses http.request() (async) + os.pullEvent() so we never block forever.
+-- CC:Tweaked's http.get() is synchronous and has no built-in timeout,
+-- so if GitHub doesn't reply (TLS handshake stuck, blocked domain, etc)
+-- the whole computer hangs. This version always times out.
+local function fetchURL(url, retries, timeoutSec)
     retries = retries or 3
+    timeoutSec = timeoutSec or 10
     for attempt = 1, retries do
-        local h = http.get(url)
-        if h then
-            local body = h.readAll()
-            h.close()
-            return body
+        -- Issue async request
+        http.request(url)
+        -- Wait for http_success or http_failure (or our own timer)
+        local timer = os.startTimer(timeoutSec)
+        local body = nil
+        local failReason = nil
+        while true do
+            local ev = { os.pullEvent() }
+            if ev[1] == "http_success" and ev[2] == url then
+                local handle = ev[3]
+                if handle then
+                    body = handle.readAll()
+                    handle.close()
+                end
+                os.cancelTimer(timer)
+                break
+            elseif ev[1] == "http_failure" and ev[2] == url then
+                failReason = ev[3] or "request failed"
+                os.cancelTimer(timer)
+                break
+            elseif ev[1] == "timer" and ev[2] == timer then
+                failReason = "timeout after " .. timeoutSec .. "s"
+                break
+            end
         end
-        setColor(C.warn); term.write(".")
-        os.sleep(0.2 * attempt)
+        if body then return body end
+        setColor(C.warn); term.write(" (retry " .. attempt .. "/" .. retries .. ": " .. tostring(failReason) .. ") ")
+        if attempt < retries then os.sleep(0.5 * attempt) end
     end
     return nil
 end
@@ -255,8 +347,8 @@ local INSTALL_ROOT = "/"
 
 local function confirm()
     setColor(C.warn)
-    term.write("\n  This will install ArchOS-CC to " .. INSTALL_ROOT .. " on this computer.\n")
-    term.write("  All existing files in startup, bios, bootloader, kernel, lib, bin, sbin, usr, de, etc will be overwritten.\n\n")
+    term.write("\n  Install ArchOS-CC to " .. INSTALL_ROOT .. "?\n")
+    term.write("  Existing files will be overwritten.\n\n")
     setColor(C.accent)
     term.write("  Proceed? [y/N] ")
     setColor(C.reset)
@@ -289,9 +381,9 @@ local function downloadManifest()
         -- parse line-by-line
         local extra = {}
         for line in remote:gmatch("[^\r\n]+") do
-            line = line:gsub("^%s+", ""):gsub("%s+$", "")
-            if line ~= "" and line:sub(1, 1) ~= "#" then
-                extra[#extra+1] = line
+            local clean = line:gsub("^%s+", ""):gsub("%s+$", "")
+            if clean ~= "" and clean:sub(1, 1) ~= "#" then
+                extra[#extra+1] = clean
             end
         end
         if #extra > 0 then
@@ -312,13 +404,19 @@ local function installAll(fileList)
     local failures = {}
     for i, rel in ipairs(fileList) do
         setColor(C.info)
-        term.write(string.format("  [%3d/%3d] %-50s ", i, n, rel))
+        -- Shortened to fit on 51-wide screens: [NN/NN] path OK
+        local counter = string.format("[%d/%d]", i, n)
+        local pathDisplay = rel
+        if #pathDisplay > 36 then
+            pathDisplay = "..." .. pathDisplay:sub(-33)
+        end
+        term.write(string.format("  %-8s %-38s ", counter, pathDisplay))
         local success, err = installFile(rel)
         if success then
             setColor(C.ok); term.write("OK\n")
             ok = ok + 1
         else
-            setColor(C.err); term.write("FAIL: " .. tostring(err) .. "\n")
+            setColor(C.err); term.write("FAIL\n")
             fail = fail + 1
             failures[#failures+1] = {rel, err}
         end
@@ -431,10 +529,28 @@ local function main()
     if not http then
         setColor(C.err)
         print("\n[FATAL] HTTP API is not enabled on this computer.")
-        print("        Enable it in ComputerCraft.cfg (http.enable=true)")
-        print("        or use a disk-based installation.")
+        print("        Enable it in computercraft-server.toml:")
+        print('          [http]')
+        print('          enabled = true')
+        print("        Or use a disk-based installation.")
         return 1
     end
+
+    -- Run preflight HTTP check BEFORE asking for confirmation.
+    -- This way the user sees the diagnostic immediately, not after typing 'y'.
+    if not preflightHTTP() then
+        setColor(C.err)
+        print("\n  Pre-flight check failed. Installation aborted.")
+        print("  See diagnostics above for how to fix.")
+        return 1
+    end
+
+    setColor(C.ok)
+    print("  HTTP preflight: OK")
+    setColor(C.dim)
+    print("  GitHub is reachable. Proceeding with installation.")
+    print("")
+    setColor(C.white)
 
     if not confirm() then
         setColor(C.warn)
