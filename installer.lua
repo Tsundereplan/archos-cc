@@ -422,9 +422,12 @@ local function downloadManifest()
 end
 
 -- Stage 3: install each file
--- We pass fetchProgressCallback to fetchURL so it can print dots while
--- waiting for HTTP. This prevents the screen from looking "frozen"
--- during slow downloads.
+-- Each file gets TWO lines:
+--   Line 1: "  [1/139] usr/bin/redstone-panel.lua"
+--   Line 2: "    > downloading...................... OK  12 KB"
+-- This way even on a 51-wide Advanced Computer screen, the path is
+-- always fully visible, the user always sees what is being downloaded,
+-- and there is a clear OK/FAIL at the end of each file.
 local function installAll(fileList)
     local n = #fileList
     local ok, fail = 0, 0
@@ -440,30 +443,30 @@ local function installAll(fileList)
     print("")
 
     for i, rel in ipairs(fileList) do
+        -- Line 1: counter + file path
         setColor(C.info)
-        -- Shortened to fit on 51-wide screens: [NN/NN] path OK
         local counter = string.format("[%d/%d]", i, n)
-        local pathDisplay = rel
-        if #pathDisplay > 36 then
-            pathDisplay = "..." .. pathDisplay:sub(-33)
-        end
-        term.write(string.format("  %-9s %-37s ", counter, pathDisplay))
-        -- Visual cue: spinner during fetch
-        term.write(".")
+        -- Path on its own line, with a small indent so it is visually
+        -- distinct from the status line below.
+        print(string.format("  %s %s", counter, rel))
+        -- Line 2: status with heartbeat dots
+        setColor(C.dim)
+        term.write("    > downloading ")
+        -- fetchURL prints "." heartbeats while waiting for HTTP.
         local success, err = installFile(rel)
-        -- Clear the spinner dot
-        term.setCursorPos(term.getCursorPos() - 1, select(2, term.getCursorPos()))
-        term.write(" ")
-        term.setCursorPos(term.getCursorPos() - 1, select(2, term.getCursorPos()))
         if success then
-            setColor(C.ok); term.write("OK\n")
+            setColor(C.ok)
+            term.write(" OK\n")
             ok = ok + 1
         else
-            setColor(C.err); term.write("FAIL\n")
+            setColor(C.err)
+            term.write(" FAIL\n")
+            setColor(C.dim)
+            term.write("      reason: " .. tostring(err) .. "\n")
             fail = fail + 1
             failures[#failures+1] = {rel, err}
         end
-        -- Flush terminal between files so user sees progress
+        -- Yield so the screen actually updates between files.
         os.sleep(0)
     end
     return ok, fail, failures

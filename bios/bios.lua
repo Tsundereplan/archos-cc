@@ -154,6 +154,14 @@ function BIOS.post()
     return #missing == 0
 end
 
+-- Count entries in a table (used by scanPeripherals).
+-- Defined BEFORE scanPeripherals to avoid forward-reference issues.
+local function count(t)
+    local n = 0
+    for _ in pairs(t) do n = n + 1 end
+    return n
+end
+
 -- Peripheral scanning
 function BIOS.scanPeripherals()
     BIOS.hw.peripherals = {}
@@ -197,17 +205,13 @@ function BIOS.scanPeripherals()
         end
     end
 
-    log("Peripherals: " .. #BIOS.hw.sides_count or 0)
+    log("Peripherals: " .. count(BIOS.hw.peripherals))
     log("Drives: " .. count(BIOS.hw.drives))
     log("Monitors: " .. count(BIOS.hw.monitors))
     log("Modems: " .. #BIOS.hw.modems)
 end
 
-function count(t)
-    local n = 0
-    for _ in pairs(t) do n = n + 1 end
-    return n
-end
+-- (count() is now defined as `local` at the top of this section)
 
 -- Plug and Play initialization
 function BIOS.initPnP()
