@@ -265,18 +265,30 @@ function BIOS.showPost()
     if not BIOS.config.enableSplash then return end
 
     local w, h = term.getSize()
-    term.setBackgroundColour(colours.black)
+    -- Defensive: use setBackgroundColour (British) if present, else
+    -- setBackgroundColor (American). Always wrap in pcall because some
+    -- CC:T versions don't implement every alias.
+    pcall(function() pcall(function() term.setBackgroundColour(colors.black) end); pcall(function() term.setBackgroundColor(colors.black) end) end)
+    pcall(function() term.setBackgroundColor(colors.black) end)
     term.clear()
     term.setCursorPos(1, 1)
 
+    -- Defensive color setter
+    local function setFG(c)
+        if not c then return end
+        if not BIOS.hw.advanced then return end
+        pcall(function() pcall(function() term.setTextColour(c) end); pcall(function() term.setTextColor(c) end) end)
+        pcall(function() term.setTextColor(c) end)
+    end
+
     -- Title
-    if BIOS.hw.advanced then term.setTextColour(colours.lightBlue) end
+    setFG(colors.lightBlue)
     print("")
     print("    ArchOS-CC BIOS v" .. BIOS.version)
     print("    =======================")
     print("")
 
-    if BIOS.hw.advanced then term.setTextColour(colours.gray) end
+    setFG(colors.gray)
     print("  Computer : " .. tostring(BIOS.hw.computerType))
     print("  ID       : " .. tostring(BIOS.hw.computerID))
     print("  Advanced : " .. tostring(BIOS.hw.advanced))
@@ -289,9 +301,9 @@ function BIOS.showPost()
     print("")
 
     -- Peripherals detected
-    if BIOS.hw.advanced then term.setTextColour(colours.cyan) end
+    setFG(colors.cyan)
     print("  Hardware detected:")
-    if BIOS.hw.advanced then term.setTextColour(colours.white) end
+    setFG(colors.white)
     local count = 0
     for side, ptype in pairs(BIOS.hw.peripherals) do
         print("    " .. side .. " : " .. ptype)
@@ -301,7 +313,7 @@ function BIOS.showPost()
     print("")
 
     -- Boot info
-    if BIOS.hw.advanced then term.setTextColour(colours.yellow) end
+    if BIOS.hw.advanced then pcall(function() pcall(function() term.setTextColour(colors.yellow) end); pcall(function() term.setTextColor(colors.yellow) end) end); pcall(function() term.setTextColor(colors.yellow) end) end
     print("  Press F2 for BIOS Setup  |  Press F12 for Boot Menu")
     print("  Booting in " .. BIOS.config.bootDelay .. "s ...")
 
@@ -328,12 +340,12 @@ function BIOS.setup()
     while true do
         term.clear()
         term.setCursorPos(1, 1)
-        if BIOS.hw.advanced then term.setTextColour(colours.lightBlue) end
+        if BIOS.hw.advanced then pcall(function() pcall(function() term.setTextColour(colors.lightBlue) end); pcall(function() term.setTextColor(colors.lightBlue) end) end); pcall(function() term.setTextColor(colors.lightBlue) end) end
         print("==========================================")
         print("       ArchOS-CC BIOS Setup")
         print("==========================================")
         print("")
-        if BIOS.hw.advanced then term.setTextColour(colours.white) end
+        if BIOS.hw.advanced then pcall(function() pcall(function() term.setTextColour(colors.white) end); pcall(function() term.setTextColor(colors.white) end) end); pcall(function() term.setTextColor(colors.white) end) end
 
         local items = {
             {"1", "Boot delay        = " .. BIOS.config.bootDelay .. "s"},
@@ -388,7 +400,7 @@ end
 function BIOS.bootMenu()
     term.clear()
     term.setCursorPos(1, 1)
-    if BIOS.hw.advanced then term.setTextColour(colours.lightBlue) end
+    if BIOS.hw.advanced then pcall(function() pcall(function() term.setTextColour(colors.lightBlue) end); pcall(function() term.setTextColor(colors.lightBlue) end) end); pcall(function() term.setTextColor(colors.lightBlue) end) end
     print("==========================================")
     print("       ArchOS-CC Boot Menu")
     print("==========================================")
@@ -408,7 +420,7 @@ function BIOS.bootMenu()
     for _, e in ipairs(entries) do if e == "archos" then found = true break end end
     if not found then table.insert(entries, "archos") end
 
-    if BIOS.hw.advanced then term.setTextColour(colours.white) end
+    if BIOS.hw.advanced then pcall(function() pcall(function() term.setTextColour(colors.white) end); pcall(function() term.setTextColor(colors.white) end) end); pcall(function() term.setTextColor(colors.white) end) end
     for i, name in ipairs(entries) do
         print("  " .. i .. ". " .. name)
     end
@@ -426,7 +438,7 @@ function BIOS.run()
     BIOS.loadConfig()
     local ok = BIOS.post()
     if not ok then
-        if BIOS.hw.advanced then term.setTextColour(colours.red) end
+        if BIOS.hw.advanced then pcall(function() pcall(function() term.setTextColour(colors.red) end); pcall(function() term.setTextColor(colors.red) end) end); pcall(function() term.setTextColor(colors.red) end) end
         print("[BIOS] POST detected missing files. Boot may fail.")
         os.sleep(1)
     end

@@ -135,5 +135,4 @@ var/cache/pacman/pkg/.gitkeep
 var/db/permissions/.gitkeep
 var/lib/pacman/local/.keep
 var/lib/pacman/sync/.keep
-var/log/boot.log
 var/run/.gitkeep

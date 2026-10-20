@@ -1,208 +1,113 @@
 --[[
-    ArchOS-CC Installer
-    ===================
+    ArchOS-CC Installer v1.1.0  -  Redesigned
+    ==========================================
     Downloads and installs the ArchOS-CC operating system from GitHub.
 
-    Usage (in CraftOS shell):
-        pastebin run <paste_id_of_installer> <github_user> <github_repo> [branch]
-        OR
-        wget https://raw.githubusercontent.com/<user>/<repo>/main/installer.lua /installer.lua
-        installer <user> <repo> [branch]
+    Usage:
+        wget <url>/installer.lua /installer.lua
+        installer <github-user> <repo-name> [branch]
 
-    Example:
-        installer myuser archos-cc main
-
-    After installation the computer will reboot into the bootloader.
+    Features:
+      * Compact banner that fits on 51-wide screens
+      * Stage-based progress with ASCII boxes
+      * Per-file progress bar (visible heartbeat during download)
+      * Password confirmation (asks twice, retries if mismatch)
+      * Optional user account creation
+      * Defensive colors (works on color and mono computers)
+      * Async HTTP with timeouts (never hangs)
 ]]
 
-local GITHUB_USER = arg[1] or "your-github-username"
-local GITHUB_REPO = arg[2] or "archos-cc"
-local GITHUB_BRANCH = arg[3] or "main"
-local GITHUB_RAW = "https://raw.githubusercontent.com/" .. GITHUB_USER .. "/" .. GITHUB_REPO .. "/" .. GITHUB_BRANCH .. "/"
+-- ============================================================
+--  Config
+-- ============================================================
 
--- Colors (Arch Linux TTY palette)
+local GITHUB_USER   = arg and arg[1] or ""
+local GITHUB_REPO   = arg and arg[2] or "archos-cc"
+local GITHUB_BRANCH = arg and arg[3] or "main"
+local GITHUB_RAW    = "https://raw.githubusercontent.com/" ..
+                      GITHUB_USER .. "/" .. GITHUB_REPO .. "/" ..
+                      GITHUB_BRANCH .. "/"
+
+-- ============================================================
+--  Helpers (must be defined BEFORE first use; Lua 5.1 has no hoisting)
+-- ============================================================
+
+-- Defensive color setters: silently skip if c is nil or term is mono.
+local function setFG(c)
+    if not c then return end
+    if not term.isColor() then return end
+    pcall(function() term.setTextColor(c) end)
+end
+
+local function setBG(c)
+    if not c then return end
+    if not term.isColor() then return end
+    pcall(function() term.setBackgroundColor(c) end)
+end
+
+-- Color palette (Arch Linux TTY inspired)
 local C = {
-    reset   = colors.white,
     head    = colors.lightBlue,
     info    = colors.cyan,
     ok      = colors.green,
     warn    = colors.yellow,
     err     = colors.red,
     dim     = colors.gray,
-    accent  = colors.lightGray,
-    bg      = colors.black
+    accent  = colors.magenta,
+    reset   = colors.white,
 }
 
--- Defensive setColor: if c is nil (e.g. from a typo like C.white
--- when the table only has C.reset), just silently skip. Better than
--- crashing the whole installer with "bad argument #1 (number expected,
--- got nil)".
-local function setColor(c)
-    if c and term.isColor() then
-        term.setTextColor(c)
-    end
+-- Get terminal size, fall back to 51x19 if not available
+local function getSize()
+    local ok, w, h = pcall(term.getSize)
+    if ok and w and h then return w, h end
+    return 51, 19
 end
 
--- Helper for colored log lines. Defined early because preflightHTTP()
--- uses it. (In Lua, `local function` is not hoisted - it must appear
--- in the source before the first call.)
-local function log(level, msg, color)
-    local prefix = ""
-    if     level == "ok"   then prefix = " [OK]   "; color = color or C.ok
-    elseif level == "err"  then prefix = " [ERR]  "; color = color or C.err
-    elseif level == "warn" then prefix = " [WARN] "; color = color or C.warn
-    else                        prefix = " [INFO] "; color = color or C.info
-    end
-    setColor(color)
-    term.write(prefix .. msg .. "\n")
+-- Print a horizontal divider line of given char and color
+local function divider(ch, color)
+    ch = ch or "-"
+    local w = getSize()
+    setFG(color)
+    print(string.rep(ch, w - 1))
+    setFG(C.reset)
 end
 
--- HTTP download with retries and proper timeout.
--- Uses http.request() (async) + os.pullEvent() so we never block forever.
--- CC:Tweaked's http.get() is synchronous and has no built-in timeout,
--- so if GitHub doesn't reply (TLS handshake stuck, blocked domain, etc)
--- the whole computer hangs. This version always times out.
---
--- While waiting for the response, we print a "." every ~2 seconds so
--- the user sees that we're still alive.
-local function fetchURL(url, retries, timeoutSec)
-    retries = retries or 3
-    timeoutSec = timeoutSec or 10
-    for attempt = 1, retries do
-        -- Issue async request
-        http.request(url)
-        -- Heartbeat timer: print a dot every 2 seconds so the screen
-        -- does not look frozen during slow downloads.
-        local heartbeat = os.startTimer(2)
-        local deadline = os.startTimer(timeoutSec)
-        local body = nil
-        local failReason = nil
-        while true do
-            local ev = { os.pullEvent() }
-            if ev[1] == "http_success" and ev[2] == url then
-                local handle = ev[3]
-                if handle then
-                    body = handle.readAll()
-                    handle.close()
-                end
-                os.cancelTimer(heartbeat)
-                os.cancelTimer(deadline)
-                break
-            elseif ev[1] == "http_failure" and ev[2] == url then
-                failReason = ev[3] or "request failed"
-                os.cancelTimer(heartbeat)
-                os.cancelTimer(deadline)
-                break
-            elseif ev[1] == "timer" and ev[2] == deadline then
-                failReason = "timeout after " .. timeoutSec .. "s"
-                break
-            elseif ev[1] == "timer" and ev[2] == heartbeat then
-                -- Heartbeat: print a dot to show we're still alive
-                term.write(".")
-                heartbeat = os.startTimer(2)
-            end
-        end
-        if body then
-            -- Clear heartbeat dots by overwriting with spaces and returning
-            return body
-        end
-        setColor(C.warn)
-        term.write(" (retry " .. attempt .. "/" .. retries .. ": " .. tostring(failReason) .. ") ")
-        if attempt < retries then os.sleep(0.5 * attempt) end
-    end
-    return nil
-end
-
-local function banner()
-    term.clear()
-    term.setCursorPos(1, 1)
-    setColor(C.head)
-    -- Compact banner that fits on a 51x19 Advanced Computer screen.
-    print("    ___               ____   ____  _  __")
-    print("   /   | ______ __ ___/  _/  / __ \\/ |/ /")
-    print("  / /| |/ __/ / // (_-< /    / /_/ /    /  ")
-    print(" /_/ |_|/_/  /_//_/___/___/  /____/_/|_/  ")
-    setColor(C.accent)
-    print(" ArchOS-CC installer - Arch Linux style OS")
+-- Print a stage banner: a box around the title
+local function stageBanner(num, title)
+    local w = getSize()
     print("")
-    setColor(C.dim)
-    print(" Repo: " .. GITHUB_USER .. "/" .. GITHUB_REPO .. " @" .. GITHUB_BRANCH)
+    setFG(C.head)
+    -- top border
+    local inner = " Stage " .. num .. ": " .. title .. " "
+    local pad = math.max(0, w - 1 - #inner)
+    local leftPad = math.floor(pad / 2)
+    local rightPad = pad - leftPad
+    print(string.rep("=", leftPad) .. inner .. string.rep("=", rightPad))
+    setFG(C.reset)
     print("")
 end
 
--- Pre-flight diagnostic: make sure HTTP works at all before we start
--- downloading 100+ files. This catches the most common CC:Tweaked issues:
---   * http API not enabled in computercraft-server.toml
---   * Domain not in the http whitelist
---   * No internet connection at all
-local function preflightHTTP()
-    setColor(C.info)
-    log("info", "HTTP preflight check ...")
-    if not http then
-        setColor(C.err)
-        log("err", "HTTP API is NOT available on this computer.")
-        setColor(C.accent)
-        print("")
-        print("  To enable HTTP:")
-        print("  1. Stop the Minecraft server")
-        print("  2. Open config/computercraft-server.toml")
-        print("  3. Set [http].enabled = true")
-        print("  4. Add raw.githubusercontent.com to [[http.rules]]:")
-        print('       { host = "raw.githubusercontent.com", action = "allow" }')
-        print('       { host = "*", action = "deny" }')
-        print("  5. Restart the server")
-        return false
-    end
-    if not http.request then
-        setColor(C.err)
-        log("err", "http.request not available (CC:T version too old?)")
-        return false
-    end
-
-    -- Try a tiny HEAD-like probe with a short timeout
-    local probeURL = GITHUB_RAW .. "MANIFEST"
-    setColor(C.dim)
-    term.write("  probing " .. probeURL .. " ... ")
-    local body = fetchURL(probeURL, 1, 8)
-    if body then
-        setColor(C.ok); print("OK")
-        setColor(C.dim); print("    (got " .. #body .. " bytes from MANIFEST)")
-        return true
-    else
-        setColor(C.err); print("FAIL")
-        setColor(C.warn)
-        print("")
-        print("  Cannot reach GitHub. Common causes:")
-        print("")
-        print("  1. HTTP not enabled in computercraft-server.toml:")
-        print('       [http]')
-        print('       enabled = true')
-        print("")
-        print("  2. Domain whitelist blocks raw.githubusercontent.com.")
-        print("     Add to [[http.rules]] in computercraft-server.toml:")
-        print('       { host = "raw.githubusercontent.com", action = "allow" }')
-        print('       { host = "github.com", action = "allow" }')
-        print('       { host = "api.github.com", action = "allow" }')
-        print('       { host = "*", action = "deny" }')
-        print("")
-        print("  3. Server has no internet, or firewall blocks HTTPS (port 443).")
-        print("")
-        print("  4. Repo is private or branch name is wrong.")
-        print("     Current: " .. GITHUB_USER .. "/" .. GITHUB_REPO .. " @ " .. GITHUB_BRANCH)
-        print("")
-        setColor(C.accent)
-        print("  Fix the above, then re-run: installer " .. GITHUB_USER .. " " .. GITHUB_REPO .. " " .. GITHUB_BRANCH)
-        return false
-    end
+-- Print a status line with colored [TAG] prefix
+local function statusLine(tag, msg, color)
+    setFG(color or C.info)
+    term.write("[" .. tag .. "] ")
+    setFG(C.reset)
+    print(msg)
 end
 
--- File manifest: list of all files (relative paths) that compose the OS.
--- Installer downloads each one in turn.
+-- ============================================================
+--  File manifest (the full list of files to download)
+-- ============================================================
+
 local MANIFEST = {
     -- Boot chain
     "startup.lua",
     "bios/bios.lua",
     "bootloader/bootloader.lua",
+    "bootloader/default",
+    "bootloader/entries/archos.lua",
+    "bootloader/entries/craftos.lua",
     -- Kernel
     "kernel/init.lua",
     "kernel/process.lua",
@@ -224,120 +129,134 @@ local MANIFEST = {
     "lib/drivers/pnp.lua",
     "lib/arch/pacman.lua",
     "lib/arch/systemd.lua",
-    -- Bin (core commands)
-    "bin/sh.lua",
-    "bin/ls.lua",
-    "bin/cd.lua",
-    "bin/cat.lua",
-    "bin/mv.lua",
-    "bin/cp.lua",
-    "bin/rm.lua",
-    "bin/mkdir.lua",
-    "bin/pwd.lua",
-    "bin/echo.lua",
-    "bin/touch.lua",
-    "bin/chmod.lua",
-    "bin/chown.lua",
-    "bin/useradd.lua",
-    "bin/userdel.lua",
-    "bin/passwd.lua",
-    "bin/su.lua",
-    "bin/sudo.lua",
-    "bin/mount.lua",
-    "bin/umount.lua",
-    "bin/dmesg.lua",
-    "bin/uname.lua",
-    "bin/clear.lua",
-    "bin/reboot.lua",
-    "bin/poweroff.lua",
-    "bin/ifconfig.lua",
-    "bin/ping.lua",
-    "bin/wget.lua",
-    "bin/pastebin.lua",
-    "bin/git.lua",
-    "bin/pinestore.lua",
-    "bin/arch-update.lua",
-    "bin/systemctl.lua",
-    "bin/pacman.lua",
-    "bin/login.lua",
-    "bin/which.lua",
-    "bin/grep.lua",
-    "bin/head.lua",
-    "bin/tail.lua",
-    "bin/wc.lua",
-    "bin/date.lua",
-    "bin/whoami.lua",
-    "bin/hostname.lua",
-    "bin/ps.lua",
-    "bin/kill.lua",
-    "bin/env.lua",
-    "bin/free.lua",
-    "bin/df.lua",
-    "bin/tree.lua",
-    "bin/find.lua",
+    -- bin/ commands
+    "bin/sh.lua", "bin/ls.lua", "bin/cd.lua", "bin/cat.lua",
+    "bin/mv.lua", "bin/cp.lua", "bin/rm.lua", "bin/mkdir.lua",
+    "bin/pwd.lua", "bin/echo.lua", "bin/touch.lua",
+    "bin/chmod.lua", "bin/chown.lua",
+    "bin/useradd.lua", "bin/userdel.lua", "bin/passwd.lua",
+    "bin/su.lua", "bin/sudo.lua",
+    "bin/mount.lua", "bin/umount.lua",
+    "bin/dmesg.lua", "bin/uname.lua", "bin/clear.lua",
+    "bin/reboot.lua", "bin/poweroff.lua",
+    "bin/ifconfig.lua", "bin/ping.lua", "bin/wget.lua",
+    "bin/pastebin.lua", "bin/git.lua", "bin/pinestore.lua",
+    "bin/arch-update.lua", "bin/systemctl.lua", "bin/pacman.lua",
+    "bin/login.lua", "bin/which.lua", "bin/grep.lua",
+    "bin/head.lua", "bin/tail.lua", "bin/wc.lua",
+    "bin/date.lua", "bin/whoami.lua", "bin/hostname.lua",
+    "bin/ps.lua", "bin/kill.lua", "bin/env.lua",
+    "bin/free.lua", "bin/df.lua", "bin/tree.lua", "bin/find.lua",
     -- sbin
-    "sbin/init.lua",
-    "sbin/fsck.lua",
-    "sbin/mkfs.lua",
-    "sbin/mkuser.lua",
-    "sbin/networkd.lua",
-    "sbin/mountd.lua",
+    "sbin/init.lua", "sbin/fsck.lua", "sbin/mkfs.lua",
+    "sbin/mkuser.lua", "sbin/networkd.lua", "sbin/mountd.lua",
     -- usr/bin applications
-    "usr/bin/editor.lua",
-    "usr/bin/browser.lua",
-    "usr/bin/gbrowse.lua",
-    "usr/bin/lua-repl.lua",
-    "usr/bin/sysmgr.lua",
-    "usr/bin/settings.lua",
-    "usr/bin/top.lua",
-    "usr/bin/neofetch.lua",
-    "usr/bin/taskmgr.lua",
-    "usr/bin/calculator.lua",
-    "usr/bin/notes.lua",
-    "usr/bin/player.lua",
-    "usr/bin/paint.lua",
-    "usr/bin/monitor-app.lua",
-    "usr/bin/redstone-panel.lua",
+    "usr/bin/editor.lua", "usr/bin/browser.lua", "usr/bin/gbrowse.lua",
+    "usr/bin/lua-repl.lua", "usr/bin/sysmgr.lua", "usr/bin/settings.lua",
+    "usr/bin/top.lua", "usr/bin/neofetch.lua", "usr/bin/taskmgr.lua",
+    "usr/bin/calculator.lua", "usr/bin/notes.lua", "usr/bin/player.lua",
+    "usr/bin/paint.lua", "usr/bin/monitor-app.lua", "usr/bin/redstone-panel.lua",
     -- Desktop environments
-    "de/tty.lua",
-    "de/gnome.lua",
-    "de/plasma.lua",
-    "de/xfce.lua",
+    "de/tty.lua", "de/gnome.lua", "de/plasma.lua", "de/xfce.lua",
     -- etc configs
-    "etc/passwd",
-    "etc/group",
-    "etc/fstab",
-    "etc/hostname",
-    "etc/issue",
-    "etc/network.conf",
-    "etc/os-release",
-    "etc/locale/en.lc",
-    "etc/shadow",
-    "etc/profile",
+    "etc/passwd", "etc/group", "etc/fstab", "etc/hostname",
+    "etc/issue", "etc/network.conf", "etc/os-release",
+    "etc/locale/en.lc", "etc/shadow", "etc/profile",
+    "etc/default-de", "etc/motd",
+    "etc/systemd/system/networkd.service",
+    "etc/systemd/system/mountd.service",
+    "etc/systemd/system/pnpd.service",
     -- Docs
-    "docs/INSTALL.md",
-    "docs/ARCHITECTURE.md",
-    "docs/COMMANDS.md",
-    "docs/DEVELOPMENT.md",
+    "docs/INSTALL.md", "docs/ARCHITECTURE.md",
+    "docs/COMMANDS.md", "docs/DEVELOPMENT.md",
+    "docs/GITHUB_SETUP.md",
+    "QUICKSTART.md",
     -- Top-level
-    "README.md",
-    "LICENSE",
-    ".gitignore",
+    "README.md", "LICENSE", ".gitignore", "MANIFEST",
 }
 
-local function ensureDir(path)
-    -- path like "/bios" or "/lib/drivers"
-    if not fs.exists(path) then
-        fs.makeDir(path)
-    elseif not fs.isDir(path) then
-        error("Path exists but is not a directory: " .. path)
+-- ============================================================
+--  Async HTTP fetch with timeout + heartbeat
+-- ============================================================
+
+-- Print a heartbeat dot to show we're still alive during HTTP wait.
+-- Writes to current cursor position; clears previous dot first.
+local heartbeatState = { lastX = nil, lastY = nil }
+
+local function clearHeartbeat()
+    if heartbeatState.lastX and heartbeatState.lastY then
+        term.setCursorPos(heartbeatState.lastX, heartbeatState.lastY)
+        term.write(" ")
     end
 end
+
+local function drawHeartbeat()
+    local x, y = term.getCursorPos()
+    heartbeatState.lastX = x
+    heartbeatState.lastY = y
+    setFG(C.dim)
+    term.write(".")
+    setFG(C.reset)
+    -- Move cursor back so the next heartbeat overwrites if needed
+    term.setCursorPos(x, y)
+end
+
+local function fetchURL(url, retries, timeoutSec)
+    retries = retries or 3
+    timeoutSec = timeoutSec or 15
+    for attempt = 1, retries do
+        -- Issue async request
+        http.request(url)
+        local heartbeat = os.startTimer(2)
+        local deadline = os.startTimer(timeoutSec)
+        local body = nil
+        local failReason = nil
+        while true do
+            local ev = { os.pullEvent() }
+            if ev[1] == "http_success" and ev[2] == url then
+                local handle = ev[3]
+                if handle then
+                    body = handle.readAll()
+                    handle.close()
+                end
+                os.cancelTimer(heartbeat)
+                os.cancelTimer(deadline)
+                break
+            elseif ev[1] == "http_failure" and ev[2] == url then
+                failReason = ev[3] or "request failed"
+                os.cancelTimer(heartbeat)
+                os.cancelTimer(deadline)
+                break
+            elseif ev[1] == "timer" and ev[2] == deadline then
+                failReason = "timeout"
+                break
+            elseif ev[1] == "timer" and ev[2] == heartbeat then
+                drawHeartbeat()
+                heartbeat = os.startTimer(2)
+            end
+        end
+        if body then
+            clearHeartbeat()
+            return body
+        end
+        if attempt < retries then
+            setFG(C.warn)
+            term.write(" retry " .. attempt .. "/" .. retries .. " (" .. tostring(failReason) .. ") ")
+            setFG(C.reset)
+            os.sleep(0.5)
+        end
+    end
+    return nil
+end
+
+-- ============================================================
+--  File writing
+-- ============================================================
 
 local function writeFile(path, content)
     -- Make sure parent directory exists
     local dir = fs.getDir(path)
-    if dir and dir ~= "" and not fs.exists(dir) then
+    if dir and dir ~= "" and dir ~= "/" and not fs.exists(dir) then
         fs.makeDir(dir)
     end
     local f = fs.open(path, "w")
@@ -349,215 +268,400 @@ local function writeFile(path, content)
     return true
 end
 
--- Install one file from GitHub
 local function installFile(relPath)
     local url = GITHUB_RAW .. relPath
-    -- URL-encode spaces just in case
     url = url:gsub(" ", "%%20")
     local body = fetchURL(url)
     if not body then
         return false, "download failed"
     end
-    -- Map repo-relative path to in-computer absolute path
     local dest = "/" .. relPath
     local ok, err = writeFile(dest, body)
     if not ok then return false, err end
-    return true
+    return true, #body
 end
 
--- Determine install root. By default we install to / (root of computer).
--- If user passed "test" mode, install to /archos-installer-tmp/
-local INSTALL_ROOT = "/"
+-- ============================================================
+--  Stage 0: pre-flight HTTP check
+-- ============================================================
+
+local function preflightHTTP()
+    stageBanner("0", "Pre-flight check")
+
+    if not http then
+        setFG(C.err)
+        statusLine("ERR", "HTTP API is not enabled.", C.err)
+        setFG(C.reset)
+        print("")
+        print("  Fix: open computercraft-server.toml and set:")
+        print('    [http]')
+        print('    enabled = true')
+        print("")
+        return false
+    end
+
+    setFG(C.info)
+    term.write("  Probing GitHub ... ")
+    setFG(C.reset)
+
+    local probeURL = GITHUB_RAW .. "MANIFEST"
+    local body = fetchURL(probeURL, 1, 8)
+    if body then
+        setFG(C.ok)
+        print("OK")
+        setFG(C.dim)
+        print("  (got " .. #body .. " bytes from MANIFEST)")
+        setFG(C.reset)
+        return true
+    else
+        setFG(C.err)
+        print("FAIL")
+        setFG(C.reset)
+        print("")
+        setFG(C.warn)
+        print("  Cannot reach GitHub. Common causes:")
+        print("")
+        print("  1. HTTP not enabled in computercraft-server.toml")
+        print('       [http]')
+        print('       enabled = true')
+        print("")
+        print("  2. Domain whitelist blocks raw.githubusercontent.com.")
+        print("     Add to [[http.rules]]:")
+        print('       { host = "raw.githubusercontent.com", action = "allow" }')
+        print('       { host = "github.com", action = "allow" }')
+        print('       { host = "*", action = "deny" }')
+        print("")
+        print("  3. Repo is private, or wrong username/branch.")
+        print("     Current: " .. GITHUB_USER .. "/" .. GITHUB_REPO .. " @" .. GITHUB_BRANCH)
+        print("")
+        setFG(C.reset)
+        return false
+    end
+end
+
+-- ============================================================
+--  Stage 1: confirm with user
+-- ============================================================
 
 local function confirm()
-    setColor(C.warn)
-    term.write("\n  Install ArchOS-CC to " .. INSTALL_ROOT .. "?\n")
-    term.write("  Existing files will be overwritten.\n\n")
-    setColor(C.accent)
+    stageBanner("1", "Confirm installation")
+    setFG(C.warn)
+    print("  This will install ArchOS-CC to / on this computer.")
+    print("  Existing files (startup, bios, bootloader, etc.) will be overwritten.")
+    setFG(C.reset)
+    print("")
+    setFG(C.accent)
     term.write("  Proceed? [y/N] ")
-    setColor(C.reset)
+    setFG(C.reset)
     local ev = read()
     return ev and (ev:lower() == "y" or ev:lower() == "yes")
 end
 
--- Stage 1: collect disk info
-local function preflight()
-    setColor(C.info)
-    log("info", "Disk space check ...")
-    local totalSpace = fs.getFreeSpace("/")
-    setColor(C.dim)
-    print("    Free space at /: " .. tostring(totalSpace) .. " bytes")
-    if totalSpace and totalSpace < 100000 then
-        log("warn", "Low disk space. Installation may fail.")
-    end
-    return true
-end
+-- ============================================================
+--  Stage 2: disk check + manifest
+-- ============================================================
 
--- Stage 2: download manifest
-local function downloadManifest()
-    setColor(C.info)
-    log("info", "Fetching file manifest ...")
-    -- We hardcode the manifest in this installer, so no extra fetch needed.
-    -- But we also try to fetch a remote MANIFEST file if it exists, so users
-    -- can extend the OS without re-uploading installer.
-    local remote = fetchURL(GITHUB_RAW .. "MANIFEST", 1)
+local function preflightDisk()
+    stageBanner("2", "Disk check & manifest")
+    local free = fs.getFreeSpace("/")
+    setFG(C.info)
+    print("  Free disk space: " .. tostring(free) .. " bytes")
+    if free and free < 200000 then
+        setFG(C.err)
+        print("  WARNING: Low disk space. Installation may fail.")
+        setFG(C.reset)
+    end
+    setFG(C.reset)
+    print("")
+    -- Try to fetch remote MANIFEST for any extra files beyond the built-in
+    setFG(C.info)
+    term.write("  Fetching file manifest ... ")
+    setFG(C.reset)
+    local remote = fetchURL(GITHUB_RAW .. "MANIFEST", 1, 6)
     if remote then
-        -- parse line-by-line
         local extra = {}
-        for line in remote:gmatch("[^\r\n]+") do
-            local clean = line:gsub("^%s+", ""):gsub("%s+$", "")
-            if clean ~= "" and clean:sub(1, 1) ~= "#" then
-                extra[#extra+1] = clean
+        for rawLine in remote:gmatch("[^\r\n]+") do
+            local line = rawLine:gsub("^%s+", ""):gsub("%s+$", "")
+            if line ~= "" and line:sub(1, 1) ~= "#" then
+                extra[#extra+1] = line
             end
         end
-        if #extra > 0 then
-            setColor(C.ok)
-            log("ok", "Remote MANIFEST loaded: " .. #extra .. " extra files")
-            return extra
-        end
+        setFG(C.ok); print("OK")
+        setFG(C.dim); print("  (manifest has " .. #extra .. " files)")
+        setFG(C.reset)
+        return extra
+    else
+        setFG(C.warn); print("using built-in (" .. #MANIFEST .. " files)")
+        setFG(C.reset)
+        return MANIFEST
     end
-    setColor(C.dim)
-    print("    Using built-in manifest (" .. #MANIFEST .. " files)")
-    return MANIFEST
 end
 
--- Stage 3: install each file
--- Each file gets TWO lines:
---   Line 1: "  [1/139] usr/bin/redstone-panel.lua"
---   Line 2: "    > downloading...................... OK  12 KB"
--- This way even on a 51-wide Advanced Computer screen, the path is
--- always fully visible, the user always sees what is being downloaded,
--- and there is a clear OK/FAIL at the end of each file.
+-- ============================================================
+--  Stage 3: download all files
+-- ============================================================
+
 local function installAll(fileList)
     local n = #fileList
     local ok, fail = 0, 0
     local failures = {}
+    local totalBytes = 0
 
-    -- Show a clear "starting downloads" banner so the user knows
-    -- something is happening even before the first file finishes.
-    setColor(C.head)
-    print("")
-    print("  ============================================")
-    print("  Downloading " .. n .. " files ...")
-    print("  ============================================")
-    print("")
+    stageBanner("3", "Downloading " .. n .. " files")
 
     for i, rel in ipairs(fileList) do
-        -- Line 1: counter + file path
-        setColor(C.info)
+        -- Line 1: counter + path
+        setFG(C.info)
         local counter = string.format("[%d/%d]", i, n)
-        -- Path on its own line, with a small indent so it is visually
-        -- distinct from the status line below.
-        print(string.format("  %s %s", counter, rel))
-        -- Line 2: status with heartbeat dots
-        setColor(C.dim)
+        print("  " .. counter .. " " .. rel)
+        -- Line 2: status prefix; heartbeat dots fill the gap until done
+        setFG(C.dim)
         term.write("    > downloading ")
-        -- fetchURL prints "." heartbeats while waiting for HTTP.
-        local success, err = installFile(rel)
+        setFG(C.reset)
+        local success, errOrSize = installFile(rel)
         if success then
-            setColor(C.ok)
-            term.write(" OK\n")
+            local size = errOrSize or 0
+            totalBytes = totalBytes + size
+            setFG(C.ok)
+            print(" OK  (" .. size .. " B)")
+            setFG(C.reset)
             ok = ok + 1
         else
-            setColor(C.err)
-            term.write(" FAIL\n")
-            setColor(C.dim)
-            term.write("      reason: " .. tostring(err) .. "\n")
+            setFG(C.err)
+            print(" FAIL")
+            setFG(C.dim)
+            print("      reason: " .. tostring(errOrSize))
+            setFG(C.reset)
             fail = fail + 1
-            failures[#failures+1] = {rel, err}
+            failures[#failures+1] = {rel, errOrSize}
         end
-        -- Yield so the screen actually updates between files.
         os.sleep(0)
     end
+
+    print("")
+    setFG(C.head)
+    print("  ============================================")
+    setFG(C.ok)
+    print(string.format("  Installed: %d files (%d bytes)", ok, totalBytes))
+    if fail > 0 then
+        setFG(C.err)
+        print(string.format("  Failed:    %d files", fail))
+        setFG(C.dim)
+        for _, f in ipairs(failures) do
+            print("    - " .. f[1] .. ": " .. tostring(f[2]))
+        end
+    end
+    setFG(C.head)
+    print("  ============================================")
+    setFG(C.reset)
     return ok, fail, failures
 end
 
--- Stage 4: post-install configuration
+-- ============================================================
+--  Stage 4: post-install hooks (create runtime dirs)
+-- ============================================================
+
 local function postInstall()
-    setColor(C.info)
-    log("info", "Running post-install hooks ...")
-
-    -- Create runtime dirs
-    for _, d in ipairs({"/var/log", "/var/run", "/var/cache", "/home", "/tmp"}) do
-        if not fs.exists(d) then fs.makeDir(d) end
+    stageBanner("4", "Post-install hooks")
+    setFG(C.info)
+    print("  Creating runtime directories ...")
+    setFG(C.reset)
+    for _, d in ipairs({"/var/log", "/var/run", "/var/cache", "/var/db",
+                        "/home", "/tmp", "/root", "/mnt", "/proc", "/dev"}) do
+        if not fs.exists(d) then
+            fs.makeDir(d)
+            setFG(C.dim)
+            print("    + " .. d)
+            setFG(C.reset)
+        end
     end
-
-    -- Default hostname
+    -- Default hostname if missing
     if not fs.exists("/etc/hostname") or fs.getSize("/etc/hostname") == 0 then
         local f = fs.open("/etc/hostname", "w")
         if f then f.write("archos-cc\n"); f.close() end
+        setFG(C.dim)
+        print("    + /etc/hostname (default)")
+        setFG(C.reset)
     end
-
-    -- Create root user if passwd file is empty
-    local pf = fs.open("/etc/passwd", "r")
-    local passwdContent = ""
-    if pf then passwdContent = pf.readAll() or ""; pf.close() end
-    if passwdContent == "" or not passwdContent:find("root") then
-        setColor(C.warn)
-        log("warn", "passwd file empty - generating default root user")
-        local f = fs.open("/etc/passwd", "w")
-        if f then
-            f.write("root:x:0:0:root:/root:/bin/sh.lua\n")
-            f.close()
-        end
-    end
-
-    -- Make /bin/sh.lua the default shell for users
-    setColor(C.ok)
-    log("ok", "Post-install hooks complete")
+    setFG(C.ok)
+    print("  Done.")
+    setFG(C.reset)
 end
 
--- Stage 5: register bootloader as startup
+-- ============================================================
+--  Stage 5: register bootloader as startup
+-- ============================================================
+
 local function registerStartup()
-    setColor(C.info)
-    log("info", "Registering bootloader as startup ...")
-    -- CC:Tweaked runs /startup.lua on boot
-    -- Our startup.lua chains into bootloader/bootloader.lua
-    -- Already part of manifest. Just verify.
+    stageBanner("5", "Verify bootloader")
     if fs.exists("/startup.lua") then
-        setColor(C.ok); log("ok", "/startup.lua present")
+        setFG(C.ok)
+        print("  /startup.lua present")
+        setFG(C.reset)
     else
-        setColor(C.err); log("err", "/startup.lua missing!")
+        setFG(C.err)
+        print("  /startup.lua missing!")
+        setFG(C.reset)
+    end
+    if fs.exists("/bootloader/bootloader.lua") then
+        setFG(C.ok)
+        print("  /bootloader/bootloader.lua present")
+        setFG(C.reset)
+    else
+        setFG(C.err)
+        print("  /bootloader/bootloader.lua missing!")
+        setFG(C.reset)
     end
 end
 
--- Stage 6: first-boot setup (creates root password)
+-- ============================================================
+--  Stage 6: first-boot setup (root password + user account + DE)
+-- ============================================================
+
+-- Ask for a password twice; only accept if both match.
+-- Returns the password, or nil if the user wants to skip.
+local function askPasswordWithConfirmation(prompt)
+    while true do
+        setFG(C.accent)
+        term.write(prompt)
+        setFG(C.reset)
+        local pw1 = read("*")
+        if not pw1 or pw1 == "" then return nil end
+        setFG(C.accent)
+        term.write("  confirm: ")
+        setFG(C.reset)
+        local pw2 = read("*")
+        if pw1 == pw2 then
+            return pw1
+        end
+        setFG(C.err)
+        print("  Passwords do not match. Try again (or leave empty to skip).")
+        setFG(C.reset)
+        print("")
+    end
+end
+
 local function firstBootPrompt()
-    setColor(C.head)
-    print("\n  === First-boot setup ===")
-    setColor(C.accent)
-    print("  Set a root password (leave empty to skip - insecure!):")
-    setColor(C.reset)
-    term.write("  root password: ")
-    local pw1 = read("*")
-    term.write("  confirm:       ")
-    local pw2 = read("*")
-    if pw1 and pw1 ~= "" and pw1 == pw2 then
-        setColor(C.info); log("info", "Hashing password ...")
-        -- Load users lib (already installed)
+    stageBanner("6", "First-boot setup")
+
+    -- 6a. Root password
+    setFG(C.warn)
+    print("  Set a root password (leave empty to skip - insecure):")
+    setFG(C.reset)
+    print("")
+    local pw = askPasswordWithConfirmation("  root password: ")
+    print("")
+    if pw then
+        setFG(C.info)
+        term.write("  Hashing password ... ")
+        setFG(C.reset)
+        -- Load users lib (already installed by stage 3)
         local users = dofile("/lib/users.lua")
         if users then
-            local hash = users.hashPassword(pw1)
+            local hash = users.hashPassword(pw)
             local sf = fs.open("/etc/shadow", "w")
             if sf then
                 sf.write("root:" .. hash .. ":0:0:99999:7:::\n")
                 sf.close()
             end
-            setColor(C.ok); log("ok", "Root password set")
+            setFG(C.ok)
+            print("OK")
+            setFG(C.reset)
         else
-            setColor(C.err); log("err", "Could not load users library")
+            setFG(C.err)
+            print("FAIL (could not load /lib/users.lua)")
+            setFG(C.reset)
         end
     else
-        setColor(C.warn); log("warn", "Skipped (no root password). Use 'passwd' later.")
+        setFG(C.warn)
+        print("  Skipped. You can set it later with: passwd")
+        setFG(C.reset)
     end
+    print("")
 
-    setColor(C.accent)
-    print("\n  Select default desktop environment:")
-    print("    1) tty      - Arch TTY (text only, minimal)")
-    print("    2) gnome     - GNOME-like (simple GUI)")
-    print("    3) plasma    - KDE Plasma-like (advanced GUI with effects)")
-    print("    4) xfce      - XFCE-like (lightweight GUI)")
+    -- 6b. Optional user account
+    setFG(C.warn)
+    print("  Create a regular user account? (recommended)")
+    setFG(C.reset)
+    setFG(C.accent)
+    term.write("  username (or empty to skip): ")
+    setFG(C.reset)
+    local username = read()
+    if username and username ~= "" then
+        -- Sanitize: only letters and digits
+        username = username:gsub("[^%w_]", "")
+        if username == "" then
+            setFG(C.err)
+            print("  Invalid username. Skipping.")
+            setFG(C.reset)
+        else
+            print("")
+            setFG(C.warn)
+            print("  Set password for " .. username .. ":")
+            setFG(C.reset)
+            local userpw = askPasswordWithConfirmation("  " .. username .. " password: ")
+            if userpw then
+                -- Load users lib and create the user
+                local users = dofile("/lib/users.lua")
+                if users then
+                    users.load()
+                    local user, err = users.addUser(username, {
+                        password = userpw,
+                        createHome = true,
+                    })
+                    if user then
+                        -- Add to wheel group (sudo access)
+                        if users.groups and users.groups["wheel"] then
+                            table.insert(users.groups["wheel"].members, username)
+                        end
+                        users.save()
+                        setFG(C.ok)
+                        print("  User '" .. username .. "' created (uid=" .. user.uid .. ")")
+                        print("  Added to 'wheel' group (sudo access enabled)")
+                        setFG(C.reset)
+                    else
+                        setFG(C.err)
+                        print("  Failed to create user: " .. tostring(err))
+                        setFG(C.reset)
+                    end
+                else
+                    setFG(C.err)
+                    print("  Could not load users library.")
+                    setFG(C.reset)
+                end
+            else
+                setFG(C.warn)
+                print("  Skipped user password. User created without password.")
+                setFG(C.reset)
+                -- Create user without password
+                local users = dofile("/lib/users.lua")
+                if users then
+                    users.load()
+                    users.addUser(username, { createHome = true })
+                    users.save()
+                end
+            end
+        end
+    else
+        setFG(C.dim)
+        print("  No regular user. You'll log in as root.")
+        setFG(C.reset)
+    end
+    print("")
+
+    -- 6c. Default desktop environment
+    setFG(C.warn)
+    print("  Choose default desktop environment:")
+    setFG(C.reset)
+    setFG(C.accent)
+    print("    1) tty      Arch TTY (text only, minimal)")
+    print("    2) gnome     GNOME-like (simple GUI)")
+    print("    3) plasma    KDE Plasma-like (advanced GUI)")
+    print("    4) xfce      XFCE-like (lightweight GUI)")
+    setFG(C.reset)
+    setFG(C.accent)
     term.write("  choice [1-4, default=1]: ")
+    setFG(C.reset)
     local choice = read()
     local de = "tty"
     if choice == "2" then de = "gnome"
@@ -565,153 +669,134 @@ local function firstBootPrompt()
     elseif choice == "4" then de = "xfce" end
     local f = fs.open("/etc/default-de", "w")
     if f then f.write(de); f.close() end
-    setColor(C.ok); log("ok", "Default DE set to: " .. de)
+    setFG(C.ok)
+    print("  Default DE: " .. de)
+    setFG(C.reset)
 end
 
--- Main
+-- ============================================================
+--  Main
+-- ============================================================
+
 local function main()
-    -- Detect missing arguments BEFORE showing the banner, so the user
-    -- sees a clear "how to use" message instead of a broken banner with
-    -- placeholder values like "your-github-username".
-    if not arg[1] or arg[1] == "" then
+    -- Check args BEFORE banner
+    if not arg or not arg[1] or arg[1] == "" then
         term.clear()
         term.setCursorPos(1, 1)
-        if term.isColor() then term.setTextColor(colors.lightBlue) end
-        print("    ArchOS-CC Installer")
-        if term.isColor() then term.setTextColor(colors.yellow) end
+        setFG(C.head)
+        print("    ArchOS-CC Installer v1.1.0")
+        divider("=", C.head)
+        setFG(C.err)
         print("")
         print("  ERROR: no GitHub username specified.")
+        setFG(C.reset)
         print("")
-        if term.isColor() then term.setTextColor(colors.white) end
+        setFG(C.warn)
         print("  Usage:")
+        setFG(C.reset)
         print("    installer <github-user> <repo-name> [branch]")
         print("")
+        setFG(C.warn)
         print("  Example:")
+        setFG(C.reset)
         print("    installer Tsundereplan archos-cc main")
         print("")
-        if term.isColor() then term.setTextColor(colors.gray) end
-        print("  Make sure the repo is PUBLIC and the branch exists.")
+        setFG(C.dim)
+        print("  Repo must be PUBLIC. Branch defaults to 'main'.")
+        setFG(C.reset)
         return 1
     end
 
-    banner()
+    -- Banner (compact, fits 51-wide screens)
+    term.clear()
+    term.setCursorPos(1, 1)
+    setFG(C.head)
+    print("    ___               ____   ____  _  __")
+    print("   /   | ______ __ ___/  _/  / __ \\/ |/ /")
+    print("  / /| |/ __/ / // (_-< /    / /_/ /    /  ")
+    print(" /_/ |_|/_/  /_//_/___/___/  /____/_/|_/  ")
+    setFG(C.accent)
+    print(" ArchOS-CC installer v1.1.0 - Arch style OS")
+    setFG(C.dim)
+    print(" Repo: " .. GITHUB_USER .. "/" .. GITHUB_REPO .. " @" .. GITHUB_BRANCH)
+    setFG(C.reset)
+    print("")
 
+    -- Check HTTP API
     if not http then
-        setColor(C.err)
-        print("")
-        print("[FATAL] HTTP API is not enabled on this computer.")
-        print("        Enable it in computercraft-server.toml:")
-        print('          [http]')
-        print('          enabled = true')
-        print("        Or use a disk-based installation.")
+        setFG(C.err)
+        print("[FATAL] HTTP API is not enabled.")
+        setFG(C.reset)
+        print("  Fix in computercraft-server.toml:")
+        print('    [http]')
+        print('    enabled = true')
         return 1
     end
 
-    -- Stage 0: preflight HTTP check.
-    -- Run BEFORE asking for confirmation so the user sees the
-    -- diagnostic immediately, not after typing 'y'.
-    setColor(C.head)
-    print("  === Stage 0: Pre-flight check ===")
-    print("")
+    -- Stage 0: preflight
     if not preflightHTTP() then
-        setColor(C.err)
+        setFG(C.err)
         print("")
-        print("  Pre-flight check failed. Installation aborted.")
-        print("  See diagnostics above for how to fix.")
+        print("  Pre-flight failed. Aborting.")
+        setFG(C.reset)
         return 1
     end
 
-    setColor(C.ok)
-    print("  HTTP preflight: OK")
-    setColor(C.dim)
-    print("  GitHub is reachable. Proceeding with installation.")
-    print("")
-    setColor(C.reset)
-
-    -- Stage 1: confirm with user
-    setColor(C.head)
-    print("  === Stage 1: Confirm ===")
-    print("")
+    -- Stage 1: confirm
     if not confirm() then
-        setColor(C.warn)
+        setFG(C.warn)
         print("")
         print("  Installation cancelled.")
+        setFG(C.reset)
         return 1
     end
 
     -- Stage 2: disk + manifest
-    setColor(C.head)
-    print("")
-    print("  === Stage 2: Disk check & manifest ===")
-    print("")
-    preflight()
-    local fileList = downloadManifest()
+    local fileList = preflightDisk()
 
-    -- Backup existing startup if present
+    -- Backup existing startup
     if fs.exists("/startup.lua") and not fs.exists("/startup.lua.bak") then
         fs.move("/startup.lua", "/startup.lua.bak")
-        setColor(C.dim)
-        print("  Backed up existing /startup.lua to /startup.lua.bak")
-        print("")
+        setFG(C.dim)
+        print("  Backed up /startup.lua to /startup.lua.bak")
+        setFG(C.reset)
     end
 
-    -- Stage 3: download files (longest stage)
-    setColor(C.head)
-    print("  === Stage 3: Downloading files ===")
+    -- Stage 3: download all files
     local ok, fail, failures = installAll(fileList)
 
-    -- Stage 4: summary
-    setColor(C.head)
-    print("")
-    print("  ============================================")
-    setColor(C.ok)
-    print(string.format("  Installed: %d files", ok))
-    if fail > 0 then
-        setColor(C.err)
-        print(string.format("  Failed:    %d files", fail))
-        setColor(C.dim)
-        for _, f in ipairs(failures) do
-            print("    - " .. f[1] .. ": " .. tostring(f[2]))
-        end
-    end
-    setColor(C.head)
-    print("  ============================================")
-    print("")
-
+    -- If everything failed, abort
     if fail > 0 and ok == 0 then
-        setColor(C.err)
-        log("err", "All downloads failed. Check GitHub repo/branch/username.")
-        print("    Expected URL pattern: " .. GITHUB_RAW)
+        setFG(C.err)
+        print("")
+        print("  All downloads failed. Check:")
+        print("    - repo URL: " .. GITHUB_RAW)
+        print("    - branch name (default is 'main')")
+        print("    - HTTP whitelist in computercraft-server.toml")
+        setFG(C.reset)
         return 1
     end
 
-    -- Stage 5: post-install hooks
-    setColor(C.head)
-    print("  === Stage 5: Post-install hooks ===")
-    print("")
+    -- Stage 4: post-install
     postInstall()
-    print("")
-
-    -- Stage 6: register startup
-    setColor(C.head)
-    print("  === Stage 6: Register bootloader ===")
-    print("")
+    -- Stage 5: verify bootloader
     registerStartup()
-    print("")
-
-    -- Stage 7: first-boot configuration
-    setColor(C.head)
-    print("  === Stage 7: First-boot setup ===")
-    print("")
+    -- Stage 6: first-boot setup (password, user, DE)
     firstBootPrompt()
-    print("")
 
-    setColor(C.ok)
+    -- Done!
+    print("")
+    setFG(C.head)
+    print("  ============================================")
+    setFG(C.ok)
     print("  ArchOS-CC installed successfully!")
+    setFG(C.head)
+    print("  ============================================")
+    setFG(C.reset)
     print("")
-    setColor(C.accent)
-    print("  Rebooting in 3 seconds ... (press Ctrl+T to abort)")
-    print("")
+    setFG(C.accent)
+    print("  Rebooting in 3 seconds ... (Ctrl+T to abort)")
+    setFG(C.reset)
     os.sleep(3)
     os.reboot()
 end
