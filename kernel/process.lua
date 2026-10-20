@@ -264,13 +264,33 @@ function Process.kill(pid)
     return Process.signal(pid, Process.SIGNALS.KILL)
 end
 
--- Wait for a process to finish (returns exitCode)
--- Currently implemented as polling from scheduler.
+-- Wait for a process to finish (returns exitCode).
+-- IMPORTANT: must yield back to the scheduler so the child process
+-- actually gets to run. We use a simple yield loop: set our status
+-- to "waiting" and yield with no filter; the scheduler will resume
+-- us on every event. We re-check the child's status each time.
 function Process.wait(pid)
     local proc = processes[pid]
     if not proc then return -1 end
+    if proc.status == "dead" then return proc.exitCode or 0 end
+
+    local me = Process.current()
+    if not me then
+        -- Not in a process context - fall back to polling (blocking)
+        while proc.status ~= "dead" do
+            os.sleep(0)
+        end
+        return proc.exitCode or 0
+    end
+
+    -- Yield repeatedly until child is dead. We accept any event,
+    -- which means we'll be resumed on every event the scheduler
+    -- dispatches. This is inefficient but correct.
     while proc.status ~= "dead" do
-        os.sleep(0)
+        me.status = "waiting"
+        me.waitFor = nil  -- any event
+        coroutine.yield()
+        me.status = "running"
     end
     return proc.exitCode or 0
 end

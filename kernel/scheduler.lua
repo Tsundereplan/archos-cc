@@ -56,8 +56,23 @@ local function tick()
     -- Wake any sleepers whose time has come
     checkSleepers(now)
 
-    -- Move ready processes into the queue (they're already there from previous state changes)
-    -- We snapshot the queue because resume can mutate it
+    -- Scan ALL processes for "ready" status and add them to the queue.
+    -- This catches newly-spawned processes that haven't been queued yet
+    -- (Process.spawn does not touch readyQueue directly).
+    for _, proc in pairs(Process.list(false)) do
+        if proc.status == "ready" then
+            -- Check if not already in queue
+            local found = false
+            for _, pid in ipairs(readyQueue) do
+                if pid == proc.pid then found = true; break end
+            end
+            if not found then
+                table.insert(readyQueue, proc.pid)
+            end
+        end
+    end
+
+    -- Snapshot the queue because resume can mutate it
     local snapshot = {}
     for i, pid in ipairs(readyQueue) do
         snapshot[i] = pid
