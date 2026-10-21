@@ -1,22 +1,21 @@
 [version]
-1.3.4
+1.3.6
 [date]
 2026-10-21
 [whatsnew]
-- FIXED: CraftOS now boots properly from bootloader menu!
-  - Old approach (os.run _G) caused "loop in gettable" in require()
-    because ArchOS-CC had polluted _G with Kernel/Process/Scheduler
-  - New approach: craftos-shim creates a marker file and reboots.
-    On next boot, startup.lua sees the marker and runs vanilla
-    CraftOS shell directly with a clean _G (CC:Tweaked reboots
-    the whole Lua state).
-  - When user types 'exit' in vanilla shell, computer reboots
-    normally back into ArchOS-CC.
-  - Marker file is one-shot: it's deleted on use, so next boot
-    after exiting vanilla shell returns to ArchOS-CC.
+- Updater now uses delete-then-download strategy:
+  * Downloads new content into memory first
+  * Only if download succeeds, deletes old file
+  * Then writes new content
+  * This prevents stale data leaking into shorter new files
+  * Old file is preserved if download fails (no data loss)
+- Better abort messaging:
+  * Shows how many files were updated vs failed
+  * Warns about partial-update state
+  * Suggests 'cleanup --force' and 'cp -r /backup/archos-*/* /'
+    to restore if needed
 [/whatsnew]
 [files]
-startup.lua
-kernel/craftos-shim.lua
+sbin/updater.lua
 latest_update.upd
 [/files]

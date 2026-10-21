@@ -5,7 +5,6 @@
 --   pinestore list
 --   pinestore info <appId>
 
-local Network = _G.Network
 local args    = {...}
 
 local hasColor = term.isColor and term.isColor()
@@ -32,9 +31,106 @@ end
 
 local sub = args[1]
 
-if not Network then
-    io.stderr:write("pinestore: network subsystem unavailable\n")
-    return 1
+-- Async HTTP fetch with timeout (used for pinestore.cc API).
+-- We don't rely on _G.Network because it tracks modem/rednet state,
+-- not HTTP. Pinestore only needs HTTP.
+local function fetchURL(url, timeoutSec)
+    timeoutSec = timeoutSec or 15
+    if not http then return nil, "HTTP API not enabled" end
+    http.request(url)
+    local timer = os.startTimer(timeoutSec)
+    while true do
+        local ev = {os.pullEvent()}
+        if ev[1] == "http_success" and ev[2] == url then
+            local handle = ev[3]
+            if handle then
+                local body = handle.readAll()
+                handle.close()
+                os.cancelTimer(timer)
+                return body
+            end
+            os.cancelTimer(timer)
+            return nil
+        elseif ev[1] == "http_failure" and ev[2] == url then
+            os.cancelTimer(timer)
+            return nil, ev[3] or "request failed"
+        elseif ev[1] == "timer" and ev[2] == timer then
+            return nil, "timeout"
+        end
+    end
+end
+
+-- URL-encode a string (for query parameters)
+local function urlEncode(s)
+    s = tostring(s or "")
+    local result = ""
+    for i = 1, #s do
+        local ch = s:sub(i, i)
+        if ch:match("[%w%-_%.~]") then
+            result = result .. ch
+        else
+            result = result .. string.format("%%%02X", string.byte(ch))
+        end
+    end
+    return result
+end
+
+-- pinestore.cc API client
+-- API docs: https://pinestore.cc/documentation
+-- Endpoints:
+--   GET /api/projects/search?q=<query>    - search projects
+--   GET /api/project/<id>                  - get project info
+--   POST /api/log/download                - report install (optional)
+local PineStore = {}
+
+function PineStore.search(query)
+    if not http then return nil, "HTTP API not enabled" end
+    local url = "https://pinestore.cc/api/projects/search?q=" .. urlEncode(query)
+    local body = fetchURL(url)
+    if not body then return nil end
+    if textutils and textutils.unserializeJSON then
+        local ok, result = pcall(textutils.unserializeJSON, body)
+        if ok then return result end
+    end
+    return body
+end
+
+function PineStore.info(appId)
+    if not http then return nil, "HTTP API not enabled" end
+    local url = "https://pinestore.cc/api/project/" .. urlEncode(appId)
+    local body = fetchURL(url)
+    if not body then return nil end
+    if textutils and textutils.unserializeJSON then
+        local ok, result = pcall(textutils.unserializeJSON, body)
+        if ok then return result end
+    end
+    return body
+end
+
+function PineStore.install(appId)
+    if not http then return nil, "HTTP API not enabled" end
+    -- pinestore.cc uses install commands like:
+    --   wget run https://pinestore.cc/api/projects/install/<id>
+    -- We fetch the install script URL directly.
+    local url = "https://pinestore.cc/api/projects/install/" .. urlEncode(appId)
+    local body = fetchURL(url)
+    if not body then
+        -- Fallback: try the project info endpoint and see if it has an install_command
+        local info = PineStore.info(appId)
+        if info and type(info) == "table" and info.install_command then
+            local cmd = info.install_command
+            -- Extract URL from "wget run <URL>"
+            local installURL = cmd:match("https?://%S+")
+            if installURL then
+                body = fetchURL(installURL)
+            end
+        end
+    end
+    if not body then return nil, "failed to fetch install script" end
+    -- Execute the install script (it returns lua code)
+    local fn, err = load(body, "pinestore-install", "t", _G)
+    if not fn then return nil, err end
+    return pcall(fn)
 end
 
 -- Normalize an app entry from the API response. The API may return a Lua table
@@ -60,19 +156,22 @@ if sub == "search" then
         io.stderr:write("pinestore search: missing query\n")
         return 1
     end
-    if not Network.online then
-        c(colors.red, function() io.stderr:write("pinestore: network is offline\n") end)
-        return 1
-    end
-    if not Network.pinestoreSearch then
-        io.stderr:write("pinestore: search not implemented in Network library\n")
+    if not http then
+        c(colors.red, function() io.stderr:write("pinestore: HTTP API not enabled on this server\n") end)
+        io.stderr:write("  Run 'internet enable' for setup instructions.\n")
         return 1
     end
 
     c(colors.cyan, function() io.write("[pinestore] Searching for '" .. query .. "' ...\n") end)
-    local results = Network.pinestoreSearch(query)
+    local results = PineStore.search(query)
     if not results then
         c(colors.yellow, function() print("[pinestore] No results (or request failed).") end)
+        print("  Possible causes:")
+        print("    - pinestore.cc is down or unreachable")
+        print("    - HTTP API whitelist blocks pinestore.cc")
+        print("    - Server has no internet connection")
+        print("")
+        print("  Run 'internet' to diagnose.")
         return 1
     end
 
@@ -126,17 +225,13 @@ elseif sub == "install" then
         io.stderr:write("pinestore install: missing appId\n")
         return 1
     end
-    if not Network.online then
-        c(colors.red, function() io.stderr:write("pinestore: network is offline\n") end)
-        return 1
-    end
-    if not Network.pinestoreInstall then
-        io.stderr:write("pinestore: install not implemented in Network library\n")
+    if not http then
+        c(colors.red, function() io.stderr:write("pinestore: HTTP API not enabled\n") end)
         return 1
     end
 
     c(colors.cyan, function() io.write("[pinestore] Installing '" .. appId .. "' ...\n") end)
-    local ok, err = Network.pinestoreInstall(appId)
+    local ok, err = PineStore.install(appId)
     if ok then
         c(colors.green, function() print("[pinestore] Installed '" .. appId .. "' successfully.") end)
         return 0
@@ -161,17 +256,13 @@ elseif sub == "info" then
         io.stderr:write("pinestore info: missing appId\n")
         return 1
     end
-    if not Network.online then
-        c(colors.red, function() io.stderr:write("pinestore: network is offline\n") end)
-        return 1
-    end
-    if not Network.pinestoreSearch then
-        io.stderr:write("pinestore: search not implemented in Network library\n")
+    if not http then
+        c(colors.red, function() io.stderr:write("pinestore: HTTP API not enabled\n") end)
         return 1
     end
 
     c(colors.cyan, function() io.write("[pinestore] Fetching info for '" .. appId .. "' ...\n") end)
-    local results = Network.pinestoreSearch(appId)
+    local results = PineStore.info(appId)
     if not results then
         c(colors.yellow, function() print("[pinestore] No info found (or request failed).") end)
         return 1

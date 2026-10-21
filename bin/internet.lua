@@ -126,6 +126,10 @@ local function checkConnectivity()
             setColor(colors.red)
             print("  [FAIL] Request failed: " .. tostring(ev[3] or "no reason"))
             setColor(colors.white)
+            print("  Check that your HTTP whitelist allows all domains:")
+            print("    [[http.rules]]")
+            print('    host = "*"')
+            print('    action = "allow"')
             return false
         elseif ev[1] == "timer" and ev[2] == timer then
             local _, y = term.getCursorPos()
@@ -187,6 +191,70 @@ local function checkGitHub()
             print("         ArchOS-CC updates use raw.githubusercontent.com")
             print("         Make sure both github.com AND raw.githubusercontent.com")
             print("         are allowed in your http.rules whitelist.")
+            setColor(colors.white)
+            return false
+        elseif ev[1] == "timer" and ev[2] == timer then
+            local _, y = term.getCursorPos()
+            term.setCursorPos(1, y)
+            term.clearLine()
+            setColor(colors.red)
+            print("  [FAIL] Timeout")
+            setColor(colors.white)
+            return false
+        elseif ev[1] == "timer" and ev[2] == hbTimer then
+            term.write(".")
+            hbTimer = os.startTimer(2)
+        end
+    end
+end
+
+-- Test pinestore.cc (for the pinestore command)
+local function checkPineStore()
+    print("")
+    setColor(colors.cyan)
+    print("Step 3b: Test pinestore.cc access")
+    setColor(colors.white)
+    if not http then
+        setColor(colors.red)
+        print("  [SKIP] HTTP API not available")
+        setColor(colors.white)
+        return false
+    end
+    setColor(colors.gray)
+    term.write("  Trying pinestore.cc ... ")
+    setColor(colors.white)
+    local url = "https://pinestore.cc/api/projects/search?q=test"
+    http.request(url)
+    local timer = os.startTimer(10)
+    local hbTimer = os.startTimer(2)
+    while true do
+        local ev = {os.pullEvent()}
+        if ev[1] == "http_success" and ev[2] == url then
+            local handle = ev[3]
+            if handle then handle.close() end
+            os.cancelTimer(timer)
+            os.cancelTimer(hbTimer)
+            local _, y = term.getCursorPos()
+            term.setCursorPos(1, y)
+            term.clearLine()
+            setColor(colors.green)
+            print("  [OK] pinestore.cc is reachable")
+            setColor(colors.white)
+            print("  You can use 'pinestore search <query>' and 'pinestore install <id>'")
+            return true
+        elseif ev[1] == "http_failure" and ev[2] == url then
+            os.cancelTimer(timer)
+            os.cancelTimer(hbTimer)
+            local _, y = term.getCursorPos()
+            term.setCursorPos(1, y)
+            term.clearLine()
+            setColor(colors.red)
+            print("  [FAIL] pinestore.cc request failed")
+            setColor(colors.yellow)
+            print("         Add pinestore.cc to your http.rules whitelist:")
+            print('           [[http.rules]]')
+            print('           host = "pinestore.cc"')
+            print('           action = "allow"')
             setColor(colors.white)
             return false
         elseif ev[1] == "timer" and ev[2] == timer then
@@ -312,6 +380,10 @@ local function main(...)
         print('   action = "allow"')
         print("")
         print("   [[http.rules]]")
+        print('   host = "pinestore.cc"')
+        print('   action = "allow"')
+        print("")
+        print("   [[http.rules]]")
         print('   host = "lite.duckduckgo.com"')
         print('   action = "allow"')
         print("")
@@ -334,6 +406,7 @@ local function main(...)
         checkHTTP()
         checkConnectivity()
         checkGitHub()
+        checkPineStore()
         checkModems()
         print("")
         setColor(colors.lightBlue)

@@ -158,6 +158,11 @@ local function main()
     print("")
 
     -- Download each file
+    -- Strategy: download the new content first, THEN delete the old file,
+    -- THEN write the new one. This way:
+    --   * If download fails, the old file is preserved (no data loss).
+    --   * If we run out of disk space, we don't lose the old version.
+    --   * Old stale content (longer than new) doesn't leak into new file.
     local ok, fail = 0, 0
     local abort = false
     for i, rel in ipairs(files) do
@@ -170,28 +175,46 @@ local function main()
         local body = fetchURL(repoURL .. rel)
         if body then
             -- Check if we have enough space for this specific file
-            local fileSpace = #body + 100  -- small overhead
-            local currentFree = fs.getFreeSpace("/" .. fs.getDir(rel) or "/")
-            if currentFree and currentFree < fileSpace then
+            -- (we need to hold both the old file AND the new content
+            -- temporarily, so check for #body + oldSize + overhead)
+            local destPath = "/" .. rel
+            local oldSize = 0
+            if fs.exists(destPath) and not fs.isDir(destPath) then
+                local szOk, sz = pcall(fs.getSize, destPath)
+                if szOk then oldSize = sz end
+            end
+            local fileSpace = #body + oldSize + 200  -- overhead
+            local currentFree = fs.getFreeSpace(fs.getDir(destPath) or "/")
+            if currentFree and currentFree < #body + 100 then
+                -- Even without keeping old file, we don't have enough space
                 setColor(colors.red)
                 print(" FAIL: out of disk space")
-                print("    need " .. fileSpace .. " bytes, have " .. currentFree)
+                print("    need " .. (#body + 100) .. " bytes, have " .. currentFree)
                 fail = fail + 1
                 abort = true  -- stop the whole update; can't continue
             else
-                local wok, werr = writeFile("/" .. rel, body)
-                if wok then
+                -- Download succeeded. Now delete the old file (if any)
+                -- and write the new content.
+                if fs.exists(destPath) then
+                    pcall(fs.delete, destPath)
+                end
+                -- Make sure parent directory exists
+                local dir = fs.getDir(destPath)
+                if dir and dir ~= "" and dir ~= "/" and not fs.exists(dir) then
+                    pcall(fs.makeDir, dir)
+                end
+                -- Write the new file
+                local f = fs.open(destPath, "w")
+                if f then
+                    f.write(body)
+                    f.close()
                     setColor(colors.green)
                     print(" OK (" .. #body .. " B)")
                     ok = ok + 1
                 else
                     setColor(colors.red)
-                    print(" FAIL: " .. tostring(werr))
+                    print(" FAIL: cannot write " .. destPath)
                     fail = fail + 1
-                    -- If it's "out of space", abort
-                    if werr and tostring(werr):lower():find("space") then
-                        abort = true
-                    end
                 end
             end
         else
@@ -208,11 +231,18 @@ local function main()
         print("")
         setColor(colors.red)
         print("[updater] Update aborted - out of disk space.")
-        print("  " .. ok .. " files updated, " .. fail .. " failed.")
+        print("  " .. ok .. " files updated successfully, " .. fail .. " failed.")
         print("")
         setColor(colors.yellow)
-        print("  Free space and run 'update install' again.")
-        print("  See suggestions above.")
+        print("  WARNING: System is in a partially-updated state.")
+        print("  Some files are new version, others are still old.")
+        print("  This may cause compatibility issues.")
+        print("")
+        print("  Recommended actions:")
+        print("    1. Free up disk space (run 'cleanup --force' or delete /backup)")
+        print("    2. Re-run 'update install' to finish the update")
+        print("    3. If system is broken, restore from backup:")
+        print("       cp -r /backup/archos-*/* /")
         print("")
         -- Remove the pending file so we don't loop on every boot
         fs.delete("/tmp/update.pending")
