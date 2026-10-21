@@ -20,10 +20,17 @@
 -- ============================================================
 --  Config
 -- ============================================================
+-- The default repo is Tsundereplan/archos-cc (the official ArchOS-CC
+-- repository). Users can still override via CLI args, but if they
+-- just run "installer" with no args, this is what gets used.
 
-local GITHUB_USER   = arg and arg[1] or ""
-local GITHUB_REPO   = arg and arg[2] or "archos-cc"
-local GITHUB_BRANCH = arg and arg[3] or "main"
+local DEFAULT_USER   = "Tsundereplan"
+local DEFAULT_REPO   = "archos-cc"
+local DEFAULT_BRANCH = "main"
+
+local GITHUB_USER   = (arg and arg[1]) or DEFAULT_USER
+local GITHUB_REPO   = (arg and arg[2]) or DEFAULT_REPO
+local GITHUB_BRANCH = (arg and arg[3]) or DEFAULT_BRANCH
 local GITHUB_RAW    = "https://raw.githubusercontent.com/" ..
                       GITHUB_USER .. "/" .. GITHUB_REPO .. "/" ..
                       GITHUB_BRANCH .. "/"
@@ -147,9 +154,11 @@ local MANIFEST = {
     "bin/date.lua", "bin/whoami.lua", "bin/hostname.lua",
     "bin/ps.lua", "bin/kill.lua", "bin/env.lua",
     "bin/free.lua", "bin/df.lua", "bin/tree.lua", "bin/find.lua",
+    "bin/update.lua",  -- new: replaces arch-update.lua
     -- sbin
     "sbin/init.lua", "sbin/fsck.lua", "sbin/mkfs.lua",
     "sbin/mkuser.lua", "sbin/networkd.lua", "sbin/mountd.lua",
+    "sbin/updater.lua",  -- new: run on boot when /tmp/update.pending exists
     -- usr/bin applications
     "usr/bin/editor.lua", "usr/bin/browser.lua", "usr/bin/gbrowse.lua",
     "usr/bin/lua-repl.lua", "usr/bin/sysmgr.lua", "usr/bin/settings.lua",
@@ -162,10 +171,12 @@ local MANIFEST = {
     "etc/passwd", "etc/group", "etc/fstab", "etc/hostname",
     "etc/issue", "etc/network.conf", "etc/os-release",
     "etc/locale/en.lc", "etc/shadow", "etc/profile",
-    "etc/default-de", "etc/motd",
+    "etc/default-de", "etc/motd", "etc/version",
     "etc/systemd/system/networkd.service",
     "etc/systemd/system/mountd.service",
     "etc/systemd/system/pnpd.service",
+    -- sbin (already in the sbin section above, but include updater here too)
+    -- (sbin/updater.lua is in the sbin section above; nothing to add here)
     -- Docs
     "docs/INSTALL.md", "docs/ARCHITECTURE.md",
     "docs/COMMANDS.md", "docs/DEVELOPMENT.md",
@@ -173,6 +184,7 @@ local MANIFEST = {
     "QUICKSTART.md",
     -- Top-level
     "README.md", "LICENSE", ".gitignore", "MANIFEST",
+    "latest_update.upd",
 }
 
 -- ============================================================
@@ -483,6 +495,15 @@ local function postInstall()
         print("    + /etc/hostname (default)")
         setFG(C.reset)
     end
+    -- Write /etc/version so `update check` can compare
+    local vf = fs.open("/etc/version", "w")
+    if vf then
+        vf.write("1.1.2\n")
+        vf.close()
+        setFG(C.dim)
+        print("    + /etc/version (1.1.2)")
+        setFG(C.reset)
+    end
     setFG(C.ok)
     print("  Done.")
     setFG(C.reset)
@@ -679,32 +700,13 @@ end
 -- ============================================================
 
 local function main()
-    -- Check args BEFORE banner
+    -- Args are now OPTIONAL. If not provided, we use the official
+    -- Tsundereplan/archos-cc repo. Display which repo we're using.
     if not arg or not arg[1] or arg[1] == "" then
-        term.clear()
-        term.setCursorPos(1, 1)
-        setFG(C.head)
-        print("    ArchOS-CC Installer v1.1.0")
-        divider("=", C.head)
-        setFG(C.err)
-        print("")
-        print("  ERROR: no GitHub username specified.")
-        setFG(C.reset)
-        print("")
-        setFG(C.warn)
-        print("  Usage:")
-        setFG(C.reset)
-        print("    installer <github-user> <repo-name> [branch]")
-        print("")
-        setFG(C.warn)
-        print("  Example:")
-        setFG(C.reset)
-        print("    installer Tsundereplan archos-cc main")
-        print("")
         setFG(C.dim)
-        print("  Repo must be PUBLIC. Branch defaults to 'main'.")
+        print("  No arguments - using official repo: " .. DEFAULT_USER .. "/" .. DEFAULT_REPO)
         setFG(C.reset)
-        return 1
+        os.sleep(1)
     end
 
     -- Banner (compact, fits 51-wide screens)

@@ -92,6 +92,9 @@ function Bootloader.getDefault()
     return "archos"
 end
 
+-- GRUB-like interactive boot menu.
+-- User can navigate with up/down arrows, Enter to boot, or type a number.
+-- Falls back to numbered prompt if arrow keys aren't available.
 function Bootloader.showMenu(entries)
     local entriesList = {}
     for name, _ in pairs(entries) do
@@ -99,35 +102,108 @@ function Bootloader.showMenu(entries)
     end
     table.sort(entriesList)
 
-    term.clear()
-    term.setCursorPos(1, 1)
-    if term.isColor() then term.setTextColor(colors.lightBlue) end
-    print("==========================================")
-    print("   ArchOS-CC Open Bootloader")
-    print("==========================================")
-    print("")
-    if term.isColor() then term.setTextColor(colors.white) end
-
+    local selected = 1
+    -- Find default entry to pre-select
+    local def = Bootloader.getDefault()
     for i, name in ipairs(entriesList) do
-        local entry = entries[name]
-        local desc = entry.description or ""
-        print(string.format("  [%d] %-15s  %s", i, name, desc))
+        if name == def then selected = i; break end
     end
-    print("")
-    if term.isColor() then term.setTextColor(colors.yellow) end
-    print("  Select entry (1-" .. #entriesList .. ") or press Enter for default:")
-    if term.isColor() then term.setTextColor(colors.white) end
-    term.write("  > ")
-    local input = read()
-    if input and input ~= "" then
-        local n = tonumber(input)
-        if n and n >= 1 and n <= #entriesList then
-            return entriesList[n]
+
+    local function render()
+        local w, h = term.getSize()
+        term.setBackgroundColor(colors.black)
+        term.clear()
+        term.setCursorPos(1, 1)
+        -- GRUB-style header
+        if term.isColor() then
+            term.setTextColor(colors.cyan)
+            term.setBackgroundColor(colors.blue)
         end
-        -- Try matching by name
-        if entries[input] then return input end
+        -- Top bar
+        term.write(" " .. string.rep(" ", w - 2) .. " ")
+        term.setCursorPos(1, 1)
+        term.write(" GNU GRUB  -  ArchOS-CC Bootloader")
+        term.setCursorPos(1, 2)
+        term.write(string.rep("=", w))
+        term.setBackgroundColor(colors.black)
+
+        if term.isColor() then term.setTextColor(colors.lightGray) end
+        term.setCursorPos(1, 3)
+        print(" Select an OS to boot:")
+        print("")
+
+        -- Menu items
+        for i, name in ipairs(entriesList) do
+            local entry = entries[name]
+            local desc = entry.description or ""
+            if i == selected then
+                if term.isColor() then
+                    term.setBackgroundColor(colors.white)
+                    term.setTextColor(colors.black)
+                end
+            else
+                if term.isColor() then
+                    term.setBackgroundColor(colors.black)
+                    term.setTextColor(colors.lightBlue)
+                end
+            end
+            term.write(" > " .. name .. string.rep(" ", 15 - #name))
+            if term.isColor() then
+                if i == selected then term.setTextColor(colors.black) end
+                term.setTextColor(i == selected and colors.black or colors.gray)
+            end
+            -- description (truncated to fit)
+            local rem = w - 4 - 15
+            if rem > 0 then
+                term.write((desc:sub(1, rem)))
+            end
+            term.setBackgroundColor(colors.black)
+            term.setCursorPos(1, 4 + i)
+            -- already wrote, move on
+        end
+        -- reset to next line
+        term.setCursorPos(1, 4 + #entriesList + 1)
+        if term.isColor() then term.setTextColor(colors.yellow) end
+        print("")
+        print(" Use arrow keys to navigate, Enter to boot.")
+        print(" Or type a number 1-" .. #entriesList .. " and press Enter.")
+        if term.isColor() then term.setTextColor(colors.white) end
+        term.setCursorPos(1, h)
+        term.write("> ")
     end
-    return Bootloader.getDefault()
+
+    -- Interactive loop
+    local input = ""
+    while true do
+        render()
+        -- Move cursor to bottom input line
+        local w, h = term.getSize()
+        term.setCursorPos(3 + #input, h)
+        local event = { os.pullEvent() }
+        if event[1] == "key" then
+            if event[2] == keys.up then
+                selected = selected - 1
+                if selected < 1 then selected = #entriesList end
+            elseif event[2] == keys.down then
+                selected = selected + 1
+                if selected > #entriesList then selected = 1 end
+            elseif event[2] == keys.enter then
+                return entriesList[selected]
+            elseif event[2] == keys.backspace then
+                input = input:sub(1, -2)
+            elseif event[2] == keys.leftCtrl or event[2] == keys.rightCtrl then
+                -- ignore
+            end
+        elseif event[1] == "char" then
+            input = input .. event[2]
+            -- Auto-boot if input matches a number
+            local n = tonumber(input)
+            if n and n >= 1 and n <= #entriesList then
+                return entriesList[n]
+            end
+            if #input > 3 then input = input:sub(-3) end  -- cap length
+        end
+    end
 end
 
 function Bootloader.bootEntry(entryName)
@@ -219,13 +295,15 @@ function Bootloader.run()
         end
     end
 
-    -- Determine which entry to boot
+    -- Determine which entry to boot.
+    -- Always show the GRUB-like menu when there are multiple entries
+    -- (archos + craftos), so the user can pick.
     local entries = Bootloader.listEntries()
     local entryCount = 0
     for _ in pairs(entries) do entryCount = entryCount + 1 end
 
     local selected
-    if _G.BIOS and _G.BIOS.config and _G.BIOS.config.enableBootMenu and entryCount > 1 then
+    if entryCount > 1 then
         selected = Bootloader.showMenu(entries)
     else
         selected = Bootloader.getDefault()

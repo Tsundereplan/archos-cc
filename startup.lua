@@ -49,6 +49,36 @@ if not fs.exists("/bootloader/bootloader.lua") then
     return
 end
 
+-- Check for pending update. If /tmp/update.pending exists, we boot into
+-- update mode instead of normal boot. The file contains the repo URL,
+-- the new version, and the list of files to download.
+if fs.exists("/tmp/update.pending") then
+    setColor(colors.yellow)
+    print("[startup] Update pending - entering update mode ...")
+    setColor(colors.white)
+    print("")
+    -- Try to run the updater script
+    if fs.exists("/sbin/updater.lua") then
+        local uOk, uErr = pcall(function()
+            dofile("/sbin/updater.lua")
+        end)
+        if not uOk then
+            setColor(colors.red)
+            print("[startup] Updater crashed: " .. tostring(uErr))
+            print("")
+            setColor(colors.yellow)
+            print("  Falling back to normal boot in 5 seconds...")
+            os.sleep(5)
+        end
+    else
+        setColor(colors.red)
+        print("[startup] /sbin/updater.lua not found - skipping update.")
+        print("  The pending update file will be removed.")
+        fs.delete("/tmp/update.pending")
+        os.sleep(3)
+    end
+end
+
 -- Load and run the bootloader
 setColor(colors.gray)
 print("[startup] Handing off to bootloader ...")

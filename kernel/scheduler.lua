@@ -81,7 +81,20 @@ local function tick()
         local proc = Process.get(pid)
         if proc and proc.status ~= "dead" then
             Process.setCurrent(pid)
-            local ok, ev = Process.resume(proc)
+            -- If a pending event is stashed, unpack it into the resume.
+            -- CC:Tweaked's coroutine.yield(filter) returns the event
+            -- arguments that were passed to coroutine.resume(coroutine, ...).
+            -- So when an event arrives, we must pass its table-unpacked
+            -- form into Process.resume so it lands inside the yielded
+            -- process at the point where it called os.pullEventRaw().
+            local event = proc._pendingEvent
+            proc._pendingEvent = nil
+            if event then
+                -- Pass all event fields as resume arguments
+                local ok, err = Process.resume(proc, table.unpack(event))
+            else
+                local ok, err = Process.resume(proc)
+            end
             Process.setCurrent(nil)
             if not ok then
                 -- Resume failed - process is now dead, logged inside

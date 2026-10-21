@@ -314,20 +314,19 @@ function BIOS.showPost()
 
     -- Boot info
     if BIOS.hw.advanced then pcall(function() pcall(function() term.setTextColour(colors.yellow) end); pcall(function() term.setTextColor(colors.yellow) end) end); pcall(function() term.setTextColor(colors.yellow) end) end
-    print("  Press F2 for BIOS Setup  |  Press F12 for Boot Menu")
+    print("  Press F12 for Boot Menu  (or wait to auto-boot)")
     print("  Booting in " .. BIOS.config.bootDelay .. "s ...")
 
-    -- Wait, watching for F2/F12
+    -- Wait, watching for F12 (boot menu).
+    -- Note: F2 (BIOS Setup) was removed because it doesn't work reliably
+    -- in CC:Tweaked. F12 works fine.
     local timer = os.startTimer(BIOS.config.bootDelay)
     while true do
         local ev = {os.pullEvent()}
         if ev[1] == "timer" and ev[2] == timer then
             break
         elseif ev[1] == "key" then
-            if ev[2] == keys.f2 then
-                BIOS.setup()
-                return "setup"
-            elseif ev[2] == keys.f12 then
+            if ev[2] == keys.f12 then
                 local choice = BIOS.bootMenu()
                 if choice then return "boot", choice end
             end

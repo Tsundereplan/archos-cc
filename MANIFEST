@@ -3,7 +3,6 @@ LICENSE
 MANIFEST
 QUICKSTART.md
 README.md
-bin/arch-update.lua
 bin/cat.lua
 bin/cd.lua
 bin/chmod.lua
@@ -47,6 +46,7 @@ bin/touch.lua
 bin/tree.lua
 bin/umount.lua
 bin/uname.lua
+bin/update.lua
 bin/useradd.lua
 bin/userdel.lua
 bin/wc.lua
@@ -83,6 +83,7 @@ etc/shadow
 etc/systemd/system/mountd.service
 etc/systemd/system/networkd.service
 etc/systemd/system/pnpd.service
+etc/version
 home/.gitkeep
 installer.lua
 kernel/craftos-shim.lua
@@ -92,6 +93,7 @@ kernel/permissions.lua
 kernel/process.lua
 kernel/scheduler.lua
 kernel/syscall.lua
+latest_update.upd
 lib/arch/pacman.lua
 lib/arch/systemd.lua
 lib/crypto.lua
@@ -113,6 +115,7 @@ sbin/mkfs.lua
 sbin/mkuser.lua
 sbin/mountd.lua
 sbin/networkd.lua
+sbin/updater.lua
 startup.lua
 tmp/.gitkeep
 usr/bin/browser.lua
