@@ -121,7 +121,9 @@ startup.lua
 tmp/.gitkeep
 usr/bin/browser.lua
 usr/bin/calculator.lua
+usr/bin/clock.lua
 usr/bin/editor.lua
+usr/bin/filemanager.lua
 usr/bin/gbrowse.lua
 usr/bin/lua-repl.lua
 usr/bin/monitor-app.lua
@@ -132,7 +134,9 @@ usr/bin/player.lua
 usr/bin/redstone-panel.lua
 usr/bin/settings.lua
 usr/bin/sysmgr.lua
+usr/bin/system-monitor.lua
 usr/bin/taskmgr.lua
+usr/bin/terminal.lua
 usr/bin/top.lua
 usr/share/icons/.gitkeep
 var/cache/pacman/pkg/.gitkeep

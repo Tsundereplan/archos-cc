@@ -268,10 +268,10 @@ function VFS.tree(rootPath, maxDepth)
         for i, name in ipairs(items) do
             local child = path .. (path:sub(-1) == "/" and "" or "/") .. name
             local last = (i == #items)
-            local branch = last and "└── " or "├── "
+            local branch = last and "+-- " or "+-- "
             table.insert(lines, prefix .. branch .. name)
             if VFS.isDir(child) then
-                local nextPrefix = prefix .. (last and "    " or "│   ")
+                local nextPrefix = prefix .. (last and "    " or "|   ")
                 walk(child, depth + 1, nextPrefix)
             end
         end

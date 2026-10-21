@@ -166,6 +166,8 @@ local MANIFEST = {
     "usr/bin/top.lua", "usr/bin/neofetch.lua", "usr/bin/taskmgr.lua",
     "usr/bin/calculator.lua", "usr/bin/notes.lua", "usr/bin/player.lua",
     "usr/bin/paint.lua", "usr/bin/monitor-app.lua", "usr/bin/redstone-panel.lua",
+    "usr/bin/clock.lua", "usr/bin/filemanager.lua",
+    "usr/bin/terminal.lua", "usr/bin/system-monitor.lua",
     -- Desktop environments
     "de/tty.lua", "de/gnome.lua", "de/plasma.lua", "de/xfce.lua",
     -- etc configs

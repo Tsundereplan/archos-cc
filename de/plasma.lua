@@ -215,8 +215,30 @@ end
 -- Draw Kickoff menu (application launcher)
 local function drawKickoff()
     local w, h = term.getSize()
+    -- Dynamic menu size based on number of apps
+    local apps = {
+        { name = "Terminal",          action = "/bin/sh.lua" },
+        { name = "Files (text)",      action = "/usr/bin/browser.lua" },
+        { name = "Files (graphical)", action = "/usr/bin/gbrowse.lua" },
+        { name = "File Manager",      action = "/usr/bin/filemanager.lua" },
+        { name = "Multi-Tab Terminal", action = "/usr/bin/terminal.lua" },
+        { name = "Text Editor",       action = "/usr/bin/editor.lua" },
+        { name = "Settings",          action = "/usr/bin/settings.lua" },
+        { name = "Notes",             action = "/usr/bin/notes.lua" },
+        { name = "Paint",             action = "/usr/bin/paint.lua" },
+        { name = "Calculator",        action = "/usr/bin/calculator.lua" },
+        { name = "Clock",             action = "/usr/bin/clock.lua" },
+        { name = "Music Player",      action = "/usr/bin/player.lua" },
+        { name = "System Monitor",    action = "/usr/bin/system-monitor.lua" },
+        { name = "Top",               action = "/usr/bin/top.lua" },
+        { name = "Neofetch",          action = "/usr/bin/neofetch.lua" },
+        { name = "Lua REPL",          action = "/usr/bin/lua-repl.lua" },
+        { name = "Task Manager",      action = "/usr/bin/taskmgr.lua" },
+        { name = "System Manager",    action = "/usr/bin/sysmgr.lua" },
+        { name = "Redstone Panel",    action = "/usr/bin/redstone-panel.lua" },
+    }
     local menuW = 28
-    local menuH = 16
+    local menuH = #apps + 5  -- apps + header + search + footer + padding
     local x = 1
     local y = h - menuH - 1
 
@@ -233,24 +255,6 @@ local function drawKickoff()
     writeAt(x + 1, y + 2, "Search: ", PALETTE.panel, PALETTE.text)
     -- (Not interactive for simplicity)
 
-    -- App list
-    local apps = {
-        { name = "Terminal",         action = "/bin/sh.lua" },
-        { name = "Files (text)",     action = "/usr/bin/browser.lua" },
-        { name = "Files (graphical)",action = "/usr/bin/gbrowse.lua" },
-        { name = "Text Editor",      action = "/usr/bin/editor.lua" },
-        { name = "Settings",         action = "/usr/bin/settings.lua" },
-        { name = "Notes",            action = "/usr/bin/notes.lua" },
-        { name = "Paint",            action = "/usr/bin/paint.lua" },
-        { name = "Calculator",       action = "/usr/bin/calculator.lua" },
-        { name = "Music Player",      action = "/usr/bin/player.lua" },
-        { name = "Top",              action = "/usr/bin/top.lua" },
-        { name = "Neofetch",        action = "/usr/bin/neofetch.lua" },
-        { name = "Lua REPL",        action = "/usr/bin/lua-repl.lua" },
-        { name = "Task Manager",    action = "/usr/bin/taskmgr.lua" },
-        { name = "System Manager",   action = "/usr/bin/sysmgr.lua" },
-        { name = "Redstone Panel",  action = "/usr/bin/redstone-panel.lua" },
-    }
     for i, app in ipairs(apps) do
         if y + 3 + i <= y + menuH - 1 then
             writeAt(x + 1, y + 3 + i, " " .. app.name, PALETTE.panel, PALETTE.text)
@@ -313,7 +317,10 @@ local function render()
     drawWidgets()
 
     for _, win in ipairs(state.windows) do
-        drawWindow(win)
+        -- Skip minimized windows (don't draw them)
+        if not win.minimized then
+            drawWindow(win)
+        end
     end
 
     if state.kickerOpen then drawKickoff() end
@@ -392,162 +399,206 @@ local function mainLoop()
     local statsTimer = os.startTimer(2)
 
     while state.running do
-        render()
-        local event = { os.pullEvent() }
+        -- Wrap render + event handling in pcall so a single bug
+        -- doesn't crash the whole DE. On error, log and continue.
+        local ok, err = pcall(function()
+            render()
+            local event = { os.pullEvent() }
 
-        if event[1] == "timer" and event[2] == statsTimer then
-            updateStats()
-            statsTimer = os.startTimer(2)
-        elseif event[1] == "key" then
-            local key = event[2]
-            if key == keys.leftCtrl or key == keys.rightCtrl or
-               key == keys.leftAlt or key == keys.rightAlt then
-                -- Modifier key, will combine with next
-            elseif key == keys.space and (state.krunnerOpen or state.kickerOpen) then
-                -- Toggle
-            elseif key == keys.f1 then
-                -- KRunner
-                state.krunnerOpen = not state.krunnerOpen
-                state.krunnerQuery = ""
-            elseif key == keys.escape then
-                state.kickerOpen = false
-                state.krunnerOpen = false
-                state.activitiesOpen = false
-                state.contextMenu = nil
-            elseif key == keys.q and not state.krunnerOpen then
-                state.running = false
-            elseif state.krunnerOpen then
-                -- KRunner active: read characters
-                if key == keys.enter then
-                    -- Execute query
-                    local q = state.krunnerQuery
-                    state.krunnerOpen = false
+            if event[1] == "timer" and event[2] == statsTimer then
+                updateStats()
+                statsTimer = os.startTimer(2)
+            elseif event[1] == "key" then
+                local key = event[2]
+                if key == keys.leftCtrl or key == keys.rightCtrl or
+                   key == keys.leftAlt or key == keys.rightAlt then
+                    -- Modifier key, will combine with next
+                elseif key == keys.space and (state.krunnerOpen or state.kickerOpen) then
+                    -- Toggle
+                elseif key == keys.f1 then
+                    -- KRunner
+                    state.krunnerOpen = not state.krunnerOpen
                     state.krunnerQuery = ""
-                    if q:sub(1, 1) == "/" or q:sub(1, 1) == "." then
-                        launchApp(q)
-                    else
-                        -- Search in PATH
-                        local cmd = q:match("%S+")
-                        local path = "/bin/" .. cmd .. ".lua"
-                        if fs.exists(path) then
-                            launchApp(path)
+                elseif key == keys.escape then
+                    state.kickerOpen = false
+                    state.krunnerOpen = false
+                    state.activitiesOpen = false
+                    state.contextMenu = nil
+                elseif key == keys.q and not state.krunnerOpen then
+                    state.running = false
+                elseif state.krunnerOpen then
+                    -- KRunner active: read characters
+                    if key == keys.enter then
+                        -- Execute query
+                        local q = state.krunnerQuery
+                        state.krunnerOpen = false
+                        state.krunnerQuery = ""
+                        if q:sub(1, 1) == "/" or q:sub(1, 1) == "." then
+                            launchApp(q)
                         else
-                            path = "/usr/bin/" .. cmd .. ".lua"
-                            if fs.exists(path) then launchApp(path) end
+                            -- Search in PATH
+                            local cmd = q:match("%S+")
+                            local path = "/bin/" .. cmd .. ".lua"
+                            if fs.exists(path) then
+                                launchApp(path)
+                            else
+                                path = "/usr/bin/" .. cmd .. ".lua"
+                                if fs.exists(path) then launchApp(path) end
+                            end
+                        end
+                    elseif key == keys.backspace then
+                        state.krunnerQuery = state.krunnerQuery:sub(1, -2)
+                    end
+                end
+            elseif event[1] == "char" and state.krunnerOpen then
+                state.krunnerQuery = state.krunnerQuery .. event[2]
+            elseif event[1] == "mouse_click" then
+                local button, x, y = event[2], event[3], event[4]
+                local w, h = term.getSize()
+
+                if state.krunnerOpen then
+                    state.krunnerOpen = false
+                elseif state.activitiesOpen then
+                    -- Click activity
+                    local startY = 4
+                    for i, name in ipairs(state.activities) do
+                        local ay = startY + (i - 1) * 3
+                        if y >= ay and y < ay + 2 then
+                            state.currentActivity = name
+                            state.activitiesOpen = false
+                            break
                         end
                     end
-                elseif key == keys.backspace then
-                    state.krunnerQuery = state.krunnerQuery:sub(1, -2)
-                end
-            end
-        elseif event[1] == "char" and state.krunnerOpen then
-            state.krunnerQuery = state.krunnerQuery .. event[2]
-        elseif event[1] == "mouse_click" then
-            local button, x, y = event[2], event[3], event[4]
-            local w, h = term.getSize()
-
-            if state.krunnerOpen then
-                state.krunnerOpen = false
-            elseif state.activitiesOpen then
-                -- Click activity
-                local startY = 4
-                for i, name in ipairs(state.activities) do
-                    local ay = startY + (i - 1) * 3
-                    if y >= ay and y < ay + 2 then
-                        state.currentActivity = name
-                        state.activitiesOpen = false
-                        break
-                    end
-                end
-            elseif state.kickerOpen then
-                -- Click an app
-                local apps = {
-                    "/bin/sh.lua", "/usr/bin/browser.lua", "/usr/bin/gbrowse.lua",
-                    "/usr/bin/editor.lua", "/usr/bin/settings.lua", "/usr/bin/notes.lua",
-                    "/usr/bin/paint.lua", "/usr/bin/calculator.lua", "/usr/bin/player.lua",
-                    "/usr/bin/top.lua", "/usr/bin/neofetch.lua", "/usr/bin/lua-repl.lua",
-                    "/usr/bin/taskmgr.lua", "/usr/bin/sysmgr.lua", "/usr/bin/redstone-panel.lua",
-                }
-                local menuY = h - 16
-                if y > menuY + 2 and y < menuY + 18 then
-                    local idx = y - (menuY + 2)
-                    if apps[idx] then
+                elseif state.kickerOpen then
+                    -- Click an app
+                    local apps = {
+                        "/bin/sh.lua", "/usr/bin/browser.lua", "/usr/bin/gbrowse.lua",
+                        "/usr/bin/filemanager.lua", "/usr/bin/terminal.lua",
+                        "/usr/bin/editor.lua", "/usr/bin/settings.lua", "/usr/bin/notes.lua",
+                        "/usr/bin/paint.lua", "/usr/bin/calculator.lua", "/usr/bin/clock.lua",
+                        "/usr/bin/player.lua", "/usr/bin/system-monitor.lua",
+                        "/usr/bin/top.lua", "/usr/bin/neofetch.lua", "/usr/bin/lua-repl.lua",
+                        "/usr/bin/taskmgr.lua", "/usr/bin/sysmgr.lua", "/usr/bin/redstone-panel.lua",
+                    }
+                    local menuY = h - #apps - 3
+                    if y > menuY + 2 and y < menuY + #apps + 3 then
+                        local idx = y - (menuY + 2)
+                        if apps[idx] then
+                            state.kickerOpen = false
+                            launchApp(apps[idx])
+                        end
+                    else
                         state.kickerOpen = false
-                        launchApp(apps[idx])
+                    end
+                elseif y == h then
+                    -- Panel click
+                    if x <= 7 then
+                        state.kickerOpen = not state.kickerOpen
+                    elseif x >= 9 and x <= 23 then
+                        -- Pinned app click
+                        local idx = math.floor((x - 9) / 3) + 1
+                        if state.pinnedApps[idx] then
+                            launchApp(state.pinnedApps[idx].action)
+                        end
+                    else
+                        -- Click on taskbar window buttons (right section)
+                        local taskX = 25
+                        for _, win in ipairs(state.windows) do
+                            local label = win.title:sub(1, 10)
+                            local btnW = #label + 2
+                            if x >= taskX and x < taskX + btnW then
+                                if win.minimized then
+                                    win.minimized = false
+                                    state.activeWindow = win
+                                else
+                                    if state.activeWindow == win then
+                                        win.minimized = true
+                                    else
+                                        state.activeWindow = win
+                                    end
+                                end
+                                break
+                            end
+                            taskX = taskX + btnW
+                            if taskX > w - 25 then break end
+                        end
                     end
                 else
-                    state.kickerOpen = false
-                end
-            elseif y == h then
-                -- Panel click
-                if x <= 7 then
-                    state.kickerOpen = not state.kickerOpen
-                elseif x >= 9 and x <= 23 then
-                    -- Pinned app click
-                    local idx = math.floor((x - 9) / 3) + 1
-                    if state.pinnedApps[idx] then
-                        launchApp(state.pinnedApps[idx].action)
-                    end
-                end
-            else
-                -- Click on desktop - check windows
-                local win = findWindowAt(x, y)
-                if win then
-                    state.activeWindow = win
-                    if y == win.y then
-                        -- Title bar click
-                        local btnX = win.x + win.width - 4
-                        if x == btnX then
-                            -- Minimize
-                            win.minimized = true
-                        elseif x == btnX + 1 then
-                            -- Maximize/restore
-                            if win.maximized then
-                                win.maximized = false
-                                win.x, win.y = win.savedX, win.savedY
-                                win.width, win.height = win.savedW, win.savedH
-                            else
-                                win.savedX, win.savedY = win.x, win.y
-                                win.savedW, win.savedH = win.width, win.height
-                                win.x, win.y = 1, 1
-                                win.width, win.height = w, h - 1
-                                win.maximized = true
-                            end
-                        elseif x == btnX + 2 then
-                            -- Close
-                            for i, w2 in ipairs(state.windows) do
-                                if w2 == win then
-                                    table.remove(state.windows, i)
-                                    break
+                    -- Click on desktop - check windows
+                    local win = findWindowAt(x, y)
+                    if win then
+                        state.activeWindow = win
+                        if y == win.y then
+                            -- Title bar click
+                            local btnX = win.x + win.width - 4
+                            if x == btnX then
+                                -- Minimize
+                                win.minimized = true
+                            elseif x == btnX + 1 then
+                                -- Maximize/restore
+                                if win.maximized then
+                                    win.maximized = false
+                                    win.x, win.y = win.savedX, win.savedY
+                                    win.width, win.height = win.savedW, win.savedH
+                                else
+                                    win.savedX, win.savedY = win.x, win.y
+                                    win.savedW, win.savedH = win.width, win.height
+                                    win.x, win.y = 1, 1
+                                    win.width, win.height = w, h - 1
+                                    win.maximized = true
                                 end
+                            elseif x == btnX + 2 then
+                                -- Close
+                                for i, w2 in ipairs(state.windows) do
+                                    if w2 == win then
+                                        table.remove(state.windows, i)
+                                        break
+                                    end
+                                end
+                                state.activeWindow = state.windows[#state.windows] or nil
+                            else
+                                -- Start dragging
+                                state.dragging = { window = win, offsetX = x - win.x, offsetY = y - win.y }
                             end
-                            state.activeWindow = state.windows[#state.windows] or nil
                         else
-                            -- Start dragging
+                            -- Body click - start dragging
                             state.dragging = { window = win, offsetX = x - win.x, offsetY = y - win.y }
                         end
                     else
-                        -- Body click - start dragging
-                        state.dragging = { window = win, offsetX = x - win.x, offsetY = y - win.y }
-                    end
-                else
-                    -- Empty desktop click - open kicker
-                    if button == 1 then
-                        state.kickerOpen = not state.kickerOpen
+                        -- Empty desktop click - open kicker
+                        if button == 1 then
+                            state.kickerOpen = not state.kickerOpen
+                        end
                     end
                 end
             end
-        elseif event[1] == "mouse_drag" then
-            if state.dragging then
-                local win = state.dragging.window
-                local newX = event[3] - state.dragging.offsetX
-                local newY = event[4] - state.dragging.offsetY
-                local w, h = term.getSize()
-                win.x = math.max(1, math.min(w - win.width, newX))
-                win.y = math.max(1, math.min(h - state.panelHeight - win.height + 1, newY))
+            if event[1] == "mouse_drag" then
+                if state.dragging then
+                    local win = state.dragging.window
+                    local newX = event[3] - state.dragging.offsetX
+                    local newY = event[4] - state.dragging.offsetY
+                    local w, h = term.getSize()
+                    win.x = math.max(1, math.min(w - win.width, newX))
+                    win.y = math.max(1, math.min(h - state.panelHeight - win.height + 1, newY))
+                end
             end
-        elseif event[1] == "mouse_up" then
-            state.dragging = nil
+            if event[1] == "mouse_up" then
+                state.dragging = nil
+            end
+        end)
+        if not ok then
+            -- Log error but keep the DE running
+            if term.isColor() then
+                pcall(function() term.setTextColor(colors.red) end)
+            end
+            pcall(function()
+                term.setCursorPos(1, select(2, term.getSize()))
+                term.write("[plasma error] " .. tostring(err):sub(1, 50))
+            end)
+            if term.isColor() then
+                pcall(function() term.setTextColor(colors.white) end)
+            end
+            os.sleep(0.5)
         end
     end
 end

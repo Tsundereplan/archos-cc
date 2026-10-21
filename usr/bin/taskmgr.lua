@@ -29,8 +29,8 @@ local function resetColors()
 end
 
 -- Box-drawing characters
-local BOX_TL, BOX_TR, BOX_BL, BOX_BR = "╔", "╗", "╚", "╝"
-local BOX_H,  BOX_V                   = "═", "║"
+local BOX_TL, BOX_TR, BOX_BL, BOX_BR = "+", "+", "+", "+"
+local BOX_H,  BOX_V                   = "=", "|"
 local BTN_L,  BTN_R,  BTN_H           = "[", "]", "-"
 
 local function writeAt(x, y, s)

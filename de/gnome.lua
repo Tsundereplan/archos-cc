@@ -12,7 +12,7 @@
 
     Layout:
       +--------------------------------------------------+
-      |  Activities  ArchOS-CC   HH:MM   ●Battery  ▼Menu |  <- top bar (height 1)
+      |  Activities  ArchOS-CC   HH:MM   *Battery  vMenu |  <- top bar (height 1)
       +--------------------------------------------------+
       |                                                  |
       |       Desktop icons (left-aligned, vertical)     |

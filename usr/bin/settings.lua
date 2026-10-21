@@ -34,8 +34,8 @@ local function resetColors()
 end
 
 -- Box-drawing characters
-local BOX_TL, BOX_TR, BOX_BL, BOX_BR = "╔", "╗", "╚", "╝"
-local BOX_H,  BOX_V                   = "═", "║"
+local BOX_TL, BOX_TR, BOX_BL, BOX_BR = "+", "+", "+", "+"
+local BOX_H,  BOX_V                   = "=", "|"
 
 local function box(x, y, w, h)
     term.setCursorPos(x, y);         term.write(BOX_TL .. string.rep(BOX_H, w - 2) .. BOX_TR)

@@ -208,6 +208,16 @@ end
 
 Shell.builtins = builtins
 
+-- Reset terminal to default colors. Called after every command in case
+-- a program left the terminal in a weird state (e.g. red on gray).
+-- This fixes the "palette gets messed up after terminating a program" bug.
+local function resetTerminal()
+    if term.isColor() then
+        pcall(function() term.setTextColor(colors.white) end)
+        pcall(function() term.setBackgroundColor(colors.black) end)
+    end
+end
+
 -- PATH lookup
 function Shell.findExecutable(cmd)
     if cmd:sub(1, 1) == "/" or cmd:sub(1, 2) == "./" or cmd:sub(1, 3) == "../" then
@@ -617,6 +627,10 @@ function Shell.main()
             Shell.saveHistory()
             -- Execute
             local ok, err = pcall(Shell.executeLine, line)
+            -- ALWAYS reset terminal colors after a command, in case
+            -- the program crashed / was terminated with Ctrl+T and left
+            -- the palette in a weird state (e.g. red on gray).
+            resetTerminal()
             if not ok then
                 if type(err) == "table" and err.type == "shell_exit" then
                     return err.code or 0

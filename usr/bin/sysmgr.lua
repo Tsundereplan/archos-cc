@@ -25,12 +25,12 @@ end
 
 -- Box-drawing characters (UTF-8 literals; modern CC:Tweaked supports them,
 -- matching the convention already used by bin/tree.lua).
-local BOX_TL = "╔"  -- top-left
-local BOX_TR = "╗"  -- top-right
-local BOX_BL = "╚"  -- bottom-left
-local BOX_BR = "╝"  -- bottom-right
-local BOX_H  = "═"  -- horizontal
-local BOX_V  = "║"  -- vertical
+local BOX_TL = "+"  -- top-left
+local BOX_TR = "+"  -- top-right
+local BOX_BL = "+"  -- bottom-left
+local BOX_BR = "+"  -- bottom-right
+local BOX_H  = "="  -- horizontal
+local BOX_V  = "|"  -- vertical
 
 local function hline(x, y, w, left, mid, right)
     term.setCursorPos(x, y)

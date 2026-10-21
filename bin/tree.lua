@@ -112,7 +112,7 @@ local function customWalk(rootPath, depth, prefix, out)
         local sep = (rootPath:sub(-1) == "/") and "" or "/"
         local child = rootPath .. sep .. name
         local last = (idx == #filtered)
-        local branch = last and "└── " or "├── "
+        local branch = last and "+-- " or "+-- "
         local isD = isDir(child)
         -- Colorize
         if term.isColor() then
@@ -124,7 +124,7 @@ local function customWalk(rootPath, depth, prefix, out)
         if term.isColor() then term.setTextColor(colors.white) end
         if isD then
             dirCount = dirCount + 1
-            local nextPrefix = prefix .. (last and "    " or "│   ")
+            local nextPrefix = prefix .. (last and "    " or "|   ")
             customWalk(child, depth + 1, nextPrefix, out)
         else
             fileCount = fileCount + 1
@@ -140,7 +140,7 @@ if not showHidden and not dirsOnly and FS and FS.tree then
     -- Use the kernel-provided FS.tree for the default case
     out = FS.tree(real, maxDepth)
     -- Count entries (approximate): the first line is the root; every line that
-    -- ends with "/" or contains a "│"/"└" referring to a dir is counted.
+    -- ends with "/" or contains a "|"/"+" referring to a dir is counted.
     -- FS.tree doesn't give us dir/file counts, so we still walk to compute them.
     local function countWalk(p, depth)
         if depth > maxDepth then return end
