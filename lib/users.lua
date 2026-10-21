@@ -268,9 +268,12 @@ end
 function Users.checkPassword(name, password)
     if not Users.shadow then loadShadow() end
     local stored = Users.shadow[name]
-    if not stored then
-        -- User has no password (allowed for fresh installs)
-        return true
+    if not stored or stored == "" then
+        -- No password set for this user.
+        -- SECURITY: do NOT auto-accept any password!
+        -- Only accept if the user typed an empty password,
+        -- and even then, we should warn about no-password accounts.
+        return password == ""
     end
     local salt, hashed = stored:match("^([^$]+)%$(.+)$")
     if not salt then return false end

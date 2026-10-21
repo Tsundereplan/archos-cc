@@ -137,6 +137,7 @@ usr/bin/neofetch.lua
 usr/bin/notes.lua
 usr/bin/paint.lua
 usr/bin/player.lua
+usr/bin/print.lua
 usr/bin/redstone-panel.lua
 usr/bin/settings.lua
 usr/bin/sysmgr.lua

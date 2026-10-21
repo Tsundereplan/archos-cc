@@ -1,32 +1,32 @@
 --[[
-    de/gui.lua  —  Unified ArchOS-CC Desktop Environment (v2)
-    =========================================================
-    A single graphical desktop with windowed applications.
+    de/gui.lua  —  Unified ArchOS-CC Desktop Environment (v3)
+    ==========================================================
+    Full window manager with:
+      * Colored window borders (each window gets unique color)
+      * Title bar with [_] minimize  [□] maximize  [X] close
+      * Drag title bar to move window
+      * Drag bottom-right corner to resize
+      * Taskbar at bottom showing minimized apps
+      * Desktop icons (from /etc/apps.conf, movable)
+      * F1 = Run dialog
+      * Click to focus, multi-window multitasking
+      * Monitor output support (M button)
+      * Printer support (via System menu)
+      * Crash-safe (pcall on every event)
 
-    Features:
-      * Top menu bar: ArchOS menu, Apps, System, Clock
-      * Desktop icons (auto-generated from /etc/apps.conf)
-      * Application WINDOWS - apps run inside windows, not full-screen!
-        Each window has: title bar, close button, drag to move, click to focus
-      * Multi-window: multiple apps can run at once
-      * Window switching: click to focus, Alt+Tab cycle
-      * F1 = Run dialog (launch by command name)
-      * Monitor output: redirect any window to an attached Monitor block
-        (Click "Monitor" button in window's title bar to send it to monitor,
-         click again to bring it back)
-      * Right-click desktop for context menu
-      * Whole event loop wrapped in pcall (crash-safe)
-
-    apps.conf format (one app per line):
+    apps.conf format:
         name|path|icon|color
 
-    Setting as default DE:
+    To set as default DE:
         echo "gui" > /etc/default-de
 ]]
 
--- ============================================================
---  Helpers
--- ============================================================
+-- Window border colors (cycle through for each new window)
+local BORDER_COLORS = {
+    colors.lightBlue, colors.green, colors.orange, colors.magenta,
+    colors.cyan, colors.pink, colors.lime, colors.purple,
+}
+local nextBorderColor = 1
 
 local function setColor(c)
     if c and term.isColor() then pcall(function() term.setTextColor(c) end) end
@@ -34,9 +34,7 @@ end
 local function setBG(c)
     if c and term.isColor() then pcall(function() term.setBackgroundColor(c) end) end
 end
-local function reset()
-    setBG(colors.black); setColor(colors.white)
-end
+local function reset() setBG(colors.black); setColor(colors.white) end
 
 local COLOR_MAP = {
     white=colors.white, orange=colors.orange, magenta=colors.magenta,
@@ -45,9 +43,7 @@ local COLOR_MAP = {
     cyan=colors.cyan, purple=colors.purple, blue=colors.blue,
     brown=colors.brown, green=colors.green, red=colors.red, black=colors.black,
 }
-local function colorFromName(name)
-    return COLOR_MAP[name] or colors.lightGray
-end
+local function colorFromName(n) return COLOR_MAP[n] or colors.lightGray end
 
 local function writeAt(x, y, text, bg, fg)
     if bg then setBG(bg) end
@@ -66,69 +62,53 @@ local function box(x, y, w, h, color)
     reset()
 end
 
--- Find attached monitors (peripheral type "monitor")
 local function findMonitors()
     local monitors = {}
-    local sides = {"top", "bottom", "left", "right", "front", "back"}
+    local sides = {"top","bottom","left","right","front","back"}
     for _, side in ipairs(sides) do
         if peripheral.isPresent(side) and peripheral.getType(side) == "monitor" then
-            local m = peripheral.wrap(side)
-            if m then
-                table.insert(monitors, { side = side, wrap = m })
-            end
+            table.insert(monitors, {side=side, wrap=peripheral.wrap(side)})
         end
     end
-    -- Also via wired modem
     if peripheral.getNames then
         for _, name in ipairs(peripheral.getNames()) do
             if peripheral.getType(name) == "monitor"
-               and name ~= "top" and name ~= "bottom"
-               and name ~= "left" and name ~= "right"
-               and name ~= "front" and name ~= "back" then
-                local m = peripheral.wrap(name)
-                if m then
-                    table.insert(monitors, { side = name, wrap = m })
-                end
+               and not (name=="top" or name=="bottom" or name=="left"
+                        or name=="right" or name=="front" or name=="back") then
+                table.insert(monitors, {side=name, wrap=peripheral.wrap(name)})
             end
         end
     end
     return monitors
 end
 
--- ============================================================
---  Load apps from /etc/apps.conf
--- ============================================================
-
+-- Load apps from config
 local function loadApps()
     local apps = {}
     if not fs.exists("/etc/apps.conf") then
         return {
-            { name="Terminal",    path="/bin/sh.lua",            icon="T", color=colors.green },
-            { name="Files",       path="/usr/bin/filemanager.lua", icon="F", color=colors.yellow },
-            { name="Editor",      path="/usr/bin/editor.lua",    icon="E", color=colors.cyan },
-            { name="Web Browser", path="/usr/bin/webbrowser.lua", icon="W", color=colors.blue },
-            { name="Settings",    path="/usr/bin/settings.lua",  icon="S", color=colors.lightGray },
-            { name="Notes",       path="/usr/bin/notes.lua",     icon="N", color=colors.orange },
-            { name="Paint",       path="/usr/bin/paint.lua",     icon="P", color=colors.magenta },
-            { name="Calculator",  path="/usr/bin/calculator.lua", icon="C", color=colors.lime },
-            { name="Clock",       path="/usr/bin/clock.lua",     icon="L", color=colors.lightBlue },
-            { name="Lua REPL",    path="/usr/bin/lua-repl.lua",  icon=">", color=colors.purple },
-            { name="System Monitor", path="/usr/bin/system-monitor.lua", icon="M", color=colors.red },
-            { name="Task Manager", path="/usr/bin/taskmgr.lua",  icon="K", color=colors.cyan },
-            { name="Neofetch",    path="/usr/bin/neofetch.lua",  icon="?", color=colors.lightBlue },
+            {name="Terminal", path="/bin/sh.lua", icon="T", color=colors.green},
+            {name="Files", path="/usr/bin/filemanager.lua", icon="F", color=colors.yellow},
+            {name="Editor", path="/usr/bin/editor.lua", icon="E", color=colors.cyan},
+            {name="Web", path="/usr/bin/webbrowser.lua", icon="W", color=colors.blue},
+            {name="Notes", path="/usr/bin/notes.lua", icon="N", color=colors.orange},
+            {name="Paint", path="/usr/bin/paint.lua", icon="P", color=colors.magenta},
+            {name="Calc", path="/usr/bin/calculator.lua", icon="C", color=colors.lime},
+            {name="Clock", path="/usr/bin/clock.lua", icon="L", color=colors.lightBlue},
+            {name="Monitor", path="/usr/bin/monitor-cast.lua", icon="M", color=colors.purple},
+            {name="Print", path="/usr/bin/print.lua", icon="PR", color=colors.red},
         }
     end
     local f = fs.open("/etc/apps.conf", "r")
     if not f then return {} end
     for line in f.readLine do
-        if line and line ~= "" and line:sub(1, 1) ~= "#" then
+        if line and line ~= "" and line:sub(1,1) ~= "#" then
             local name, path, icon, colorName = line:match("^([^|]+)|([^|]+)|([^|]+)|([^|%s]+)")
             if name and path then
                 table.insert(apps, {
-                    name = name,
-                    path = path,
-                    icon = icon or "?",
-                    color = colorFromName(colorName),
+                    name=name, path=path,
+                    icon=icon or "?",
+                    color=colorFromName(colorName),
                 })
             end
         end
@@ -138,41 +118,41 @@ local function loadApps()
 end
 
 -- ============================================================
---  Window class
+--  Window class — each app runs in a window
 -- ============================================================
--- Each window runs an app inside a CC:Tweaked window object.
--- The app's term.redirect points to the window, so its term.write()
--- calls go into the window's buffer (not the main screen).
 
 local Window = {}
 Window.__index = Window
 
--- Create a window for an app
 function Window.new(app, x, y, w, h)
     local self = setmetatable({}, Window)
     self.app = app
     self.title = app.name
-    self.x = x
-    self.y = y
+    self.x = x or 5
+    self.y = y or 3
     self.width = w or 35
     self.height = h or 12
-    -- Create CC:Tweaked window object (invisible initially)
-    -- We use the native term as parent
+    self.borderColor = BORDER_COLORS[nextBorderColor]
+    nextBorderColor = nextBorderColor % #BORDER_COLORS + 1
+    self.minimized = false
+    self.maximized = false
+    self.savedX = self.x
+    self.savedY = self.y
+    self.savedW = self.width
+    self.savedH = self.height
     self.window = window.create(term.current(), self.x, self.y, self.width, self.height, false)
     self.coro = nil
     self.alive = false
-    self.monitor = nil  -- if set, output goes to monitor instead
+    self.monitor = nil
+    self.lastError = nil
     return self
 end
 
--- Start the app inside this window
 function Window:start()
-    if self.alive then return end
+    if self.alive then return true end
     self.alive = true
-    -- Set _G.arg for the app (so it can read CLI args if any)
     local oldArg = _G.arg
     _G.arg = {[0] = self.app.path}
-    -- Read the file
     local f = fs.open(self.app.path, "r")
     if not f then
         self.alive = false
@@ -187,151 +167,188 @@ function Window:start()
         self.alive = false
         return false, "compile error: " .. tostring(err)
     end
-    -- Create coroutine for the app
     self.coro = coroutine.create(function()
-        -- Redirect term to our window inside the coroutine
         local oldTerm = term.redirect(self.window)
         local ok, err = pcall(fn)
         term.redirect(oldTerm)
         self.alive = false
-        self.lastError = not ok and tostring(err) or nil
+        if not ok then self.lastError = tostring(err) end
     end)
     -- Initial resume
-    self:redirToWindow()
-    local ok, err = coroutine.resume(self.coro)
-    self:redirBack()
+    self:_resume()
     return true
 end
 
--- Redirect term to this window's buffer (so we can draw to it)
-function Window:redirToWindow()
-    if self.monitor then
-        self.oldRedirect = term.redirect(self.monitor.wrap)
-    else
-        self.oldRedirect = term.redirect(self.window)
-    end
-end
-
--- Restore term to main screen
-function Window:redirBack()
-    if self.oldRedirect then
-        term.redirect(self.oldRedirect)
-        self.oldRedirect = nil
-    end
-end
-
--- Resume the app coroutine with an event
-function Window:resume(event)
-    if not self.alive or not self.coro then return false end
+function Window:_resume(event)
+    if not self.alive or not self.coro then return end
     if coroutine.status(self.coro) == "dead" then
         self.alive = false
-        return false
-    end
-    self:redirToWindow()
-    local ok, yieldOrErr
-    if event then
-        ok, yieldOrErr = coroutine.resume(self.coro, unpack(event))
-    else
-        ok, yieldOrErr = coroutine.resume(self.coro)
-    end
-    self:redirBack()
-    if not ok then
-        self.alive = false
-        self.lastError = tostring(yieldOrErr)
-        return false
-    end
-    if coroutine.status(self.coro) == "dead" then
-        self.alive = false
-    end
-    return self.alive
-end
-
--- Draw the window chrome (border + title bar + buttons)
-function Window:draw(isActive)
-    -- Don't draw chrome if redirected to monitor
-    if self.monitor then
-        -- Just draw a placeholder showing where it is
-        box(self.x, self.y, self.width, 1, colors.gray)
-        writeAt(self.x + 1, self.y, " [on monitor: " .. self.monitor.side .. "] ", colors.gray, colors.yellow)
         return
     end
-    -- Shadow
-    local w, h = term.getSize()
-    if self.x + self.width <= w then
-        box(self.x + 1, self.y + 1, self.width, self.height, colors.gray)
+    local oldRedirect
+    if self.monitor then
+        oldRedirect = term.redirect(self.monitor.wrap)
+    else
+        oldRedirect = term.redirect(self.window)
     end
-    -- Background
-    box(self.x, self.y, self.width, self.height, colors.black)
-    -- Title bar
-    local titleBG = isActive and colors.blue or colors.gray
-    box(self.x, self.y, self.width, 1, titleBG)
-    writeAt(self.x + 1, self.y, " " .. self.title:sub(1, self.width - 6) .. " ", titleBG, colors.white)
-    -- Buttons: M (monitor), X (close)
-    writeAt(self.x + self.width - 2, self.y, "M", titleBG, colors.lightBlue)
-    writeAt(self.x + self.width - 1, self.y, "X", titleBG, colors.yellow)
-    -- Window content (visible portion)
-    -- The CC:Tweaked window object has its own buffer; we just need
-    -- to make it visible by drawing it to the main screen.
-    -- window.visible = true and call window.redraw()
-    if self.window.setVisible then
-        self.window.setVisible(true)
+    if event then
+        coroutine.resume(self.coro, unpack(event))
+    else
+        coroutine.resume(self.coro)
     end
-    if self.window.redraw then
-        self.window.redraw()
+    term.redirect(oldRedirect)
+    if coroutine.status(self.coro) == "dead" then
+        self.alive = false
     end
 end
 
--- Check if a click is in this window
+function Window:resume(event)
+    if not self.alive then return end
+    -- Translate mouse events to window-relative coords
+    if event and (event[1] == "mouse_click" or event[1] == "mouse_up"
+               or event[1] == "mouse_drag" or event[1] == "mouse_scroll") then
+        local relX = event[3] - self.x + 1
+        local relY = event[4] - self.y + 1
+        -- Clamp to window bounds
+        if relX < 1 or relX > self.width or relY < 1 or relY > self.height then
+            return
+        end
+        self:_resume({event[1], event[2], relX, relY})
+    else
+        self:_resume(event)
+    end
+end
+
+function Window:drawChrome(isActive)
+    -- Title bar
+    local tb = isActive and self.borderColor or colors.gray
+    box(self.x, self.y, self.width, 1, tb)
+    -- Title text
+    local titleText = self.title:sub(1, self.width - 8)
+    writeAt(self.x + 1, self.y, " " .. titleText .. " ", tb, colors.white)
+    -- Buttons: [_] minimize  [□] maximize  [X] close
+    local btnX = self.x + self.width - 4
+    writeAt(btnX, self.y, "_", tb, colors.yellow)      -- minimize
+    writeAt(btnX + 1, self.y, self.maximized and "." or "[]", tb, colors.lightBlue)  -- maximize
+    writeAt(btnX + 3, self.y, "X", tb, colors.red)      -- close
+    -- Side borders
+    setColor(self.borderColor)
+    for row = self.y + 1, self.y + self.height - 1 do
+        term.setCursorPos(self.x, row)
+        term.write("|")
+        term.setCursorPos(self.x + self.width - 1, row)
+        term.write("|")
+    end
+    -- Bottom border (with resize handle)
+    setColor(self.borderColor)
+    term.setCursorPos(self.x, self.y + self.height - 1)
+    term.write("+" .. string.rep("-", self.width - 3) .. "+")
+    -- Resize handle indicator (bottom-right corner)
+    writeAt(self.x + self.width - 2, self.y + self.height - 1, ">", self.borderColor, colors.black)
+    reset()
+end
+
+function Window:draw(isActive)
+    if self.minimized then return end
+    if self.monitor then
+        -- Placeholder when on monitor
+        box(self.x, self.y, self.width, 1, colors.gray)
+        writeAt(self.x + 1, self.y, " [on " .. self.monitor.side .. "] ", colors.gray, colors.yellow)
+        return
+    end
+    self:drawChrome(isActive)
+    -- Show window content
+    if self.window.setVisible then self.window.setVisible(true) end
+    if self.window.redraw then self.window.redraw() end
+end
+
 function Window:contains(x, y)
     return x >= self.x and x < self.x + self.width and
            y >= self.y and y < self.y + self.height
 end
 
--- Check if click is on title bar
 function Window:onTitleBar(x, y)
     return y == self.y and x >= self.x and x < self.x + self.width
 end
 
--- Check if click is on close button
+function Window:onMinButton(x, y)
+    return y == self.y and x == self.x + self.width - 4
+end
+
+function Window:onMaxButton(x, y)
+    return y == self.y and x == self.x + self.width - 3
+end
+
 function Window:onCloseButton(x, y)
     return y == self.y and x == self.x + self.width - 1
 end
 
--- Check if click is on monitor button
-function Window:onMonitorButton(x, y)
-    return y == self.y and x == self.x + self.width - 2
+function Window:onResizeHandle(x, y)
+    return y == self.y + self.height - 1 and x == self.x + self.width - 2
 end
 
--- Toggle monitor output
-function Window:toggleMonitor()
-    if self.monitor then
-        -- Back to window
-        self.monitor = nil
-        -- Resume app: it will get events from main term again
+function Window:close()
+    self.alive = false
+end
+
+function Window:minimize()
+    self.minimized = true
+end
+
+function Window:restore()
+    self.minimized = false
+end
+
+function Window:toggleMaximize()
+    if self.maximized then
+        self.x = self.savedX
+        self.y = self.savedY
+        self.width = self.savedW
+        self.height = self.savedH
+        self.maximized = false
     else
-        -- Find first available monitor
-        local monitors = findMonitors()
-        if #monitors == 0 then
-            return false, "no monitors attached"
-        end
-        self.monitor = monitors[1]
-        -- Clear and show on monitor
-        self.monitor.wrap.clear()
-        self.monitor.wrap.setCursorPos(1, 1)
-        self.monitor.wrap.setTextColor(colors.white)
-        self.monitor.wrap.setBackgroundColor(colors.black)
+        self.savedX = self.x
+        self.savedY = self.y
+        self.savedW = self.width
+        self.savedH = self.height
+        local w, h = term.getSize()
+        self.x = 1
+        self.y = 2
+        self.width = w
+        self.height = h - 2  -- leave room for menu + taskbar
+        self.maximized = true
     end
-    return true
+    if self.window.reposition then
+        self.window.reposition(self.x, self.y, self.width, self.height)
+    end
 end
 
--- Move window
 function Window:move(newX, newY)
     local w, h = term.getSize()
     self.x = math.max(1, math.min(w - self.width + 1, newX))
-    self.y = math.max(2, math.min(h - self.height + 1, newY))
+    self.y = math.max(2, math.min(h - self.height, newY))
     if self.window.reposition then
         self.window.reposition(self.x, self.y)
     end
+end
+
+function Window:resize(newW, newH)
+    self.width = math.max(8, newW)
+    self.height = math.max(4, newH)
+    if self.window.reposition then
+        self.window.reposition(self.x, self.y, self.width, self.height)
+    end
+end
+
+function Window:toggleMonitor()
+    if self.monitor then
+        self.monitor = nil
+    else
+        local monitors = findMonitors()
+        if #monitors == 0 then return false end
+        self.monitor = monitors[1]
+    end
+    return true
 end
 
 -- ============================================================
@@ -341,14 +358,13 @@ end
 local state = {
     apps = {},
     windows = {},
-    nextWindowID = 1,
     activeWindow = nil,
     menuOpen = nil,
     runDialogOpen = false,
     runQuery = "",
     clock = "00:00",
     running = true,
-    dragging = nil,
+    dragging = nil,    -- {window, offsetX, offsetY, type="move"|"resize"}
 }
 
 -- ============================================================
@@ -358,52 +374,72 @@ local state = {
 local function drawMenuBar()
     local w, h = term.getSize()
     box(1, 1, w, 1, colors.blue)
-    setColor(colors.white)
-    writeAt(2, 1, "ArchOS", colors.blue, state.menuOpen == "archos" and colors.yellow or colors.white)
-    writeAt(9, 1, "Apps",   colors.blue, state.menuOpen == "apps" and colors.yellow or colors.white)
-    writeAt(14, 1, "System", colors.blue, state.menuOpen == "system" and colors.yellow or colors.white)
-    writeAt(math.floor(w/2) - 4, 1, "ArchOS-CC", colors.blue, colors.white)
-    writeAt(w - #state.clock - 1, 1, state.clock, colors.blue, colors.white)
+    writeAt(2, 1, "ArchOS", colors.blue, state.menuOpen=="archos" and colors.yellow or colors.white)
+    writeAt(9, 1, "Apps", colors.blue, state.menuOpen=="apps" and colors.yellow or colors.white)
+    writeAt(14, 1, "System", colors.blue, state.menuOpen=="system" and colors.yellow or colors.white)
+    writeAt(math.floor(w/2)-4, 1, "ArchOS-CC", colors.blue, colors.white)
+    writeAt(w-#state.clock-1, 1, state.clock, colors.blue, colors.white)
     reset()
 end
 
 local function drawDesktopIcons()
     for i, app in ipairs(state.apps) do
         local x = 2
-        local y = 3 + (i - 1) * 4
-        local w, h = term.getSize()
-        if y + 3 > h - 1 then break end
+        local y = 3 + (i-1)*4
+        local _, h = term.getSize()
+        if y + 3 > h - 2 then break end
         box(x, y, 4, 3, app.color)
-        writeAt(x + 1, y + 1, " " .. (app.icon or "?") .. " ", app.color, colors.black)
+        writeAt(x+1, y+1, " "..(app.icon or "?").." ", app.color, colors.black)
         local label = app.name
-        if #label > 6 then label = label:sub(1, 6) end
-        writeAt(x, y + 3, " " .. label .. "  ", colors.black, colors.white)
+        if #label > 6 then label = label:sub(1,6) end
+        writeAt(x, y+3, " "..label.."  ", colors.black, colors.white)
     end
+end
+
+local function drawTaskbar()
+    local w, h = term.getSize()
+    box(1, h, w, 1, colors.lightGray)
+    setColor(colors.black)
+    -- Show minimized windows
+    local x = 2
+    for _, win in ipairs(state.windows) do
+        if win.minimized then
+            local label = win.title:sub(1, 12)
+            writeAt(x, h, " ["..label.."] ", colors.lightGray, colors.black)
+            x = x + #label + 4
+        end
+    end
+    -- Show open windows (non-minimized) count
+    local openCount = 0
+    for _, win in ipairs(state.windows) do
+        if not win.minimized then openCount = openCount + 1 end
+    end
+    if openCount > 0 then
+        writeAt(w - 15, h, " Open: " .. openCount .. " ", colors.lightGray, colors.black)
+    end
+    reset()
 end
 
 local function drawWindows()
-    -- Draw windows in z-order (back to front)
+    -- Draw non-minimized windows back to front
     for _, win in ipairs(state.windows) do
-        win:draw(win == state.activeWindow)
+        if not win.minimized then
+            win:draw(win == state.activeWindow)
+        end
     end
-end
-
-local function drawMenu(menuType)
-    -- ... (same as before, omitted for brevity)
-    -- Returns items, x, y, w, h
 end
 
 local function drawRunDialog()
     local w, h = term.getSize()
-    local boxW = 40
-    local boxH = 3
-    local x = math.floor((w - boxW) / 2)
-    local y = math.floor(h / 2) - 1
-    box(x + 1, y + 1, boxW, boxH, colors.gray)
-    box(x, y, boxW, boxH, colors.blue)
-    writeAt(x + 1, y, " Run command: ", colors.blue, colors.yellow)
-    writeAt(x + 1, y + 1, " > " .. state.runQuery .. "_", colors.blue, colors.white)
-    writeAt(x + 1, y + 2, " Enter to run, Esc to cancel ", colors.blue, colors.lightGray)
+    local bw = 40
+    local bh = 3
+    local x = math.floor((w-bw)/2)
+    local y = math.floor(h/2)-1
+    box(x+1, y+1, bw, bh, colors.gray)
+    box(x, y, bw, bh, colors.blue)
+    writeAt(x+1, y, " Run: ", colors.blue, colors.yellow)
+    writeAt(x+1, y+1, " > "..state.runQuery.."_", colors.blue, colors.white)
+    writeAt(x+1, y+2, " Enter=run  Esc=cancel ", colors.blue, colors.lightGray)
 end
 
 local function render()
@@ -412,44 +448,77 @@ local function render()
     drawMenuBar()
     drawDesktopIcons()
     drawWindows()
-    if state.menuOpen then drawMenu(state.menuOpen) end
-    if state.runDialogOpen then drawRunDialog() end
-end
-
--- ============================================================
---  Launch an app in a new window
--- ============================================================
-
-local function launchApp(app)
-    -- Default window position: cascade
-    local offset = (#state.windows % 5) * 2
-    local win = Window.new(app, 5 + offset, 3 + offset, 35, 12)
-    local ok, err = win:start()
-    if not ok then
-        -- Show error in a window
-        local errWin = Window.new(
-            { name = "Error", icon = "!", color = colors.red },
-            10, 5, 30, 5
-        )
-        errWin.title = "Error"
-        errWin:start()
-        -- Write error message to the window
-        errWin:redirToWindow()
-        term.clear()
-        term.setCursorPos(1, 1)
-        term.setTextColor(colors.red)
-        print("Failed to launch:")
-        print(app.path)
-        print("")
-        print(tostring(err))
-        term.setTextColor(colors.white)
-        errWin:redirBack()
-        table.insert(state.windows, errWin)
-        state.activeWindow = errWin
-        return
+    drawTaskbar()
+    if state.menuOpen then
+        -- Draw dropdown menu (simplified)
+        local items = {}
+        local menuX = 1
+        if state.menuOpen == "archos" then
+            menuX = 2
+            items = {
+                {"Run... (F1)", function() state.runDialogOpen = true; state.runQuery = "" end},
+                {"Logout", function() state.running = false end},
+                {"Reboot", function() os.reboot() end},
+                {"Power Off", function() os.shutdown() end},
+            }
+        elseif state.menuOpen == "apps" then
+            menuX = 9
+            for _, app in ipairs(state.apps) do
+                table.insert(items, {app.name, function()
+                    -- Launch in a window
+                    local win = Window.new(app, 5 + #state.windows*2, 4 + #state.windows)
+                    win:start()
+                    table.insert(state.windows, win)
+                    state.activeWindow = win
+                end})
+            end
+        elseif state.menuOpen == "system" then
+            menuX = 14
+            items = {
+                {"Settings", function()
+                    local win = Window.new({name="Settings", path="/usr/bin/settings.lua", icon="S", color=colors.lightGray})
+                    win:start(); table.insert(state.windows, win); state.activeWindow = win
+                end},
+                {"System Monitor", function()
+                    local win = Window.new({name="Monitor", path="/usr/bin/system-monitor.lua", icon="M", color=colors.red})
+                    win:start(); table.insert(state.windows, win); state.activeWindow = win
+                end},
+                {"Task Manager", function()
+                    local win = Window.new({name="Tasks", path="/usr/bin/taskmgr.lua", icon="K", color=colors.cyan})
+                    win:start(); table.insert(state.windows, win); state.activeWindow = win
+                end},
+                {"Print File", function()
+                    local win = Window.new({name="Print", path="/usr/bin/print.lua", icon="PR", color=colors.red})
+                    win:start(); table.insert(state.windows, win); state.activeWindow = win
+                end},
+                {"Update", function()
+                    local win = Window.new({name="Update", path="/bin/update.lua", icon="U", color=colors.green})
+                    win:start(); table.insert(state.windows, win); state.activeWindow = win
+                end},
+                {"Cleanup", function()
+                    local win = Window.new({name="Cleanup", path="/bin/cleanup.lua", icon="C", color=colors.yellow})
+                    win:start(); table.insert(state.windows, win); state.activeWindow = win
+                end},
+            }
+        end
+        -- Draw menu dropdown
+        local mw = 25
+        local mh = #items + 2
+        box(menuX, 2, mw, mh, colors.lightGray)
+        setColor(colors.black)
+        writeAt(menuX+1, 2, " "..state.menuOpen.." ", colors.lightGray, colors.black)
+        for i, item in ipairs(items) do
+            local label = item[1]
+            if #label > mw-3 then label = label:sub(1, mw-3) end
+            writeAt(menuX+1, 2+i, " "..label..string.rep(" ", mw-#label-3), colors.lightGray, colors.black)
+        end
+        reset()
+        state.menuItems = items
+        state.menuX = menuX
+        state.menuW = mw
+        state.menuH = mh
     end
-    table.insert(state.windows, win)
-    state.activeWindow = win
+    if state.runDialogOpen then drawRunDialog() end
 end
 
 -- ============================================================
@@ -460,25 +529,25 @@ local function main()
     state.apps = loadApps()
     state.clock = os.date("%H:%M")
 
-    -- Run login first (full-screen, not in a window)
+    -- Run login (full screen)
     if fs.exists("/bin/login.lua") and _G.Kernel then
         local pid = _G.Kernel.exec("/bin/login.lua", {})
         if pid then _G.Kernel.wait(pid) end
     end
 
     local clockTimer = os.startTimer(30)
-    local tickTimer = os.startTimer(0.1)  -- 10 FPS for window updates
+    local tickTimer = os.startTimer(0.1)
 
     while state.running do
         local ok, err = pcall(function()
             render()
-            local event = { os.pullEvent() }
+            local event = {os.pullEvent()}
 
-            -- Always deliver timer events to all windows (so apps can update)
+            -- Timer: tick all windows
             if event[1] == "timer" and event[2] == tickTimer then
                 for _, win in ipairs(state.windows) do
-                    if win.alive then
-                        win:resume(event)
+                    if win.alive and not win.minimized then
+                        win:_resume(event)
                     end
                 end
                 -- Reap dead windows
@@ -500,76 +569,71 @@ local function main()
                 return
             end
 
-            -- Deliver events to active window first
-            if state.activeWindow and state.activeWindow.alive then
-                local win = state.activeWindow
-                -- Check if event is for this window
-                if event[1] == "mouse_click" or event[1] == "mouse_up" or
-                   event[1] == "mouse_drag" or event[1] == "mouse_scroll" then
-                    -- Translate mouse coords relative to window
-                    local btn, x, y = event[2], event[3], event[4]
-                    if win:contains(x, y) and not win:onTitleBar(x, y) then
-                        -- Translate to window-relative coords
-                        local relX = x - win.x + 1
-                        local relY = y - win.y + 1
-                        -- Deliver to window
-                        win:resume({event[1], btn, relX, relY})
-                        return
+            -- Run dialog input
+            if state.runDialogOpen then
+                if event[1] == "char" then
+                    state.runQuery = state.runQuery .. event[2]
+                elseif event[1] == "key" then
+                    if event[2] == keys.enter then
+                        local q = state.runQuery
+                        state.runDialogOpen = false
+                        state.runQuery = ""
+                        -- Find app by name
+                        for _, app in ipairs(state.apps) do
+                            if app.name:lower():find(q:lower()) then
+                                local win = Window.new(app, 5+#state.windows*2, 4+#state.windows)
+                                win:start()
+                                table.insert(state.windows, win)
+                                state.activeWindow = win
+                                return
+                            end
+                        end
+                        -- Try as path
+                        local path = q
+                        if not path:match("^/") then
+                            for _, d in ipairs({"/bin","/usr/bin"}) do
+                                local p = d.."/"..q
+                                if not p:match("%.lua$") then p = p..".lua" end
+                                if fs.exists(p) then path = p; break end
+                            end
+                        end
+                        if fs.exists(path) then
+                            local win = Window.new({name=q, path=path, icon="?", color=colors.lightGray})
+                            win:start()
+                            table.insert(state.windows, win)
+                            state.activeWindow = win
+                        end
+                    elseif event[2] == keys.backspace then
+                        state.runQuery = state.runQuery:sub(1,-2)
+                    elseif event[2] == keys.escape then
+                        state.runDialogOpen = false
+                        state.runQuery = ""
                     end
-                elseif event[1] == "key" or event[1] == "char" or event[1] == "paste" then
-                    -- Key events go to active window
-                    win:resume(event)
-                    return
                 end
+                return
             end
 
-            -- Handle desktop-level events
+            -- Key events
             if event[1] == "key" then
-                local key = event[2]
-                if key == keys.f1 then
+                if event[2] == keys.f1 then
                     state.runDialogOpen = not state.runDialogOpen
                     state.runQuery = ""
                     state.menuOpen = nil
-                elseif key == keys.escape then
+                elseif event[2] == keys.escape then
                     state.menuOpen = nil
-                    state.runDialogOpen = false
-                elseif key == keys.q and not state.runDialogOpen then
+                elseif event[2] == keys.q then
                     state.running = false
                 end
-            elseif event[1] == "char" and state.runDialogOpen then
-                state.runQuery = state.runQuery .. event[2]
-            elseif event[1] == "key" and state.runDialogOpen then
-                if event[2] == keys.enter then
-                    local q = state.runQuery
-                    state.runDialogOpen = false
-                    state.runQuery = ""
-                    -- Find app by name
-                    for _, app in ipairs(state.apps) do
-                        if app.name:lower():find(q:lower()) then
-                            launchApp(app)
-                            return
-                        end
-                    end
-                    -- Try as path
-                    local path = q
-                    if not path:match("^/") then
-                        for _, d in ipairs({"/bin", "/usr/bin"}) do
-                            local p = d .. "/" .. q
-                            if not p:match("%.lua$") then p = p .. ".lua" end
-                            if fs.exists(p) then path = p; break end
-                        end
-                    end
-                    if fs.exists(path) then
-                        launchApp({ name = q, path = path, icon = "?", color = colors.lightGray })
-                    end
-                elseif event[2] == keys.backspace then
-                    state.runQuery = state.runQuery:sub(1, -2)
-                end
-            elseif event[1] == "mouse_click" then
-                local button, x, y = event[2], event[3], event[4]
+                return
+            end
+
+            -- Mouse events
+            if event[1] == "mouse_click" then
+                local btn, x, y = event[2], event[3], event[4]
                 local w, h = term.getSize()
+
+                -- Menu bar click
                 if y == 1 then
-                    -- Menu bar
                     if x >= 2 and x <= 7 then
                         state.menuOpen = state.menuOpen == "archos" and nil or "archos"
                     elseif x >= 9 and x <= 12 then
@@ -579,71 +643,121 @@ local function main()
                     else
                         state.menuOpen = nil
                     end
-                elseif state.menuOpen then
-                    -- Click on a menu item
-                    state.menuOpen = nil
-                else
-                    -- Check windows first (front to back)
-                    local clickedWin = nil
-                    for i = #state.windows, 1, -1 do
-                        local win = state.windows[i]
-                        if win:contains(x, y) then
-                            clickedWin = win
-                            -- Bring to front
-                            table.remove(state.windows, i)
-                            table.insert(state.windows, win)
-                            break
-                        end
-                    end
-                    if clickedWin then
-                        state.activeWindow = clickedWin
-                        if clickedWin:onCloseButton(x, y) then
-                            -- Close button
-                            clickedWin.alive = false
-                            for i, w in ipairs(state.windows) do
-                                if w == clickedWin then
-                                    table.remove(state.windows, i)
-                                    break
-                                end
-                            end
-                            state.activeWindow = state.windows[#state.windows] or nil
-                        elseif clickedWin:onMonitorButton(x, y) then
-                            -- Toggle monitor
-                            local ok, err = clickedWin:toggleMonitor()
-                            if not ok then
-                                -- No monitor - show message
-                            end
-                        elseif clickedWin:onTitleBar(x, y) then
-                            -- Start dragging
-                            state.dragging = { window = clickedWin, offsetX = x - clickedWin.x, offsetY = y - clickedWin.y }
+                    return
+                end
+
+                -- Menu item click
+                if state.menuOpen and state.menuItems then
+                    if x >= state.menuX and x < state.menuX + state.menuW
+                       and y > 2 and y <= 2 + #state.menuItems then
+                        local item = state.menuItems[y - 2]
+                        if item then
+                            state.menuOpen = nil
+                            state.menuItems = nil
+                            item[2]()  -- execute action
                         end
                     else
-                        -- Desktop icons
-                        for i, app in ipairs(state.apps) do
-                            local ix = 2
-                            local iy = 3 + (i - 1) * 4
-                            if x >= ix and x <= ix + 3 and y >= iy and y <= iy + 2 then
-                                launchApp(app)
-                                break
+                        state.menuOpen = nil
+                        state.menuItems = nil
+                    end
+                    return
+                end
+
+                -- Taskbar click (minimized windows)
+                if y == h then
+                    local tbX = 2
+                    for i, win in ipairs(state.windows) do
+                        if win.minimized then
+                            local label = win.title:sub(1,12)
+                            local bw = #label + 4
+                            if x >= tbX and x < tbX + bw then
+                                win:restore()
+                                state.activeWindow = win
+                                return
                             end
+                            tbX = tbX + bw
                         end
                     end
+                    return
                 end
-            elseif event[1] == "mouse_drag" then
+
+                -- Check windows (front to back)
+                for i = #state.windows, 1, -1 do
+                    local win = state.windows[i]
+                    if not win.minimized and win:contains(x, y) then
+                        -- Bring to front
+                        table.remove(state.windows, i)
+                        table.insert(state.windows, win)
+                        state.activeWindow = win
+
+                        -- Check title bar buttons
+                        if win:onCloseButton(x, y) then
+                            win:close()
+                        elseif win:onMinButton(x, y) then
+                            win:minimize()
+                            state.activeWindow = nil
+                        elseif win:onMaxButton(x, y) then
+                            win:toggleMaximize()
+                        elseif win:onTitleBar(x, y) then
+                            state.dragging = {window=win, offsetX=x-win.x, offsetY=y-win.y, type="move"}
+                        elseif win:onResizeHandle(x, y) then
+                            state.dragging = {window=win, type="resize"}
+                        else
+                            -- Deliver click to window
+                            win:resume(event)
+                        end
+                        return
+                    end
+                end
+
+                -- Desktop icon click
+                for i, app in ipairs(state.apps) do
+                    local ix = 2
+                    local iy = 3 + (i-1)*4
+                    if x >= ix and x <= ix+3 and y >= iy and y <= iy+2 then
+                        local win = Window.new(app, 5+#state.windows*2, 4+#state.windows)
+                        win:start()
+                        table.insert(state.windows, win)
+                        state.activeWindow = win
+                        return
+                    end
+                end
+            end
+
+            -- Mouse drag (move or resize window)
+            if event[1] == "mouse_drag" and state.dragging then
+                local drag = state.dragging
+                local win = drag.window
+                if drag.type == "move" then
+                    win:move(event[3] - drag.offsetX, event[4] - drag.offsetY)
+                elseif drag.type == "resize" then
+                    local newW = event[3] - win.x + 1
+                    local newH = event[4] - win.y + 1
+                    win:resize(newW, newH)
+                end
+                return
+            end
+
+            -- Mouse up — deliver to active window or stop dragging
+            if event[1] == "mouse_up" then
                 if state.dragging then
-                    state.dragging.window:move(
-                        event[3] - state.dragging.offsetX,
-                        event[4] - state.dragging.offsetY
-                    )
+                    state.dragging = nil
+                elseif state.activeWindow and state.activeWindow.alive then
+                    state.activeWindow:resume(event)
                 end
-            elseif event[1] == "mouse_up" then
-                state.dragging = nil
+                return
+            end
+
+            -- Other events (key, char, paste) → active window
+            if state.activeWindow and state.activeWindow.alive then
+                state.activeWindow:resume(event)
             end
         end)
+
         if not ok then
             setColor(colors.red)
             term.setCursorPos(1, select(2, term.getSize()))
-            term.write("[gui error] " .. tostring(err):sub(1, 40))
+            term.write("[gui err] " .. tostring(err):sub(1, 40))
             setColor(colors.white)
             os.sleep(0.5)
         end

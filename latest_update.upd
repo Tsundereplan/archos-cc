@@ -1,36 +1,44 @@
 [version]
-1.4.1
+1.5.0
 [date]
 2026-10-21
 [whatsnew]
-- BIG: All GUI apps now run in WINDOWS, not full-screen!
-  - Each app gets its own window with title bar, close button, drag
-  - Multiple apps can run simultaneously in separate windows
-  - Click window to focus, click title bar to drag
-  - Click X button to close
-  - Apps share events via cooperative coroutine scheduling
-- NEW: Monitor output support
-  - Each window has an 'M' button in title bar
-  - Click M to send that app's output to an attached Monitor block
-  - Click M again to bring it back to the main screen
-- NEW: monitor-cast command (usr/bin/monitor-cast.lua)
-  - Cast text/images to any Monitor block
-  - 'monitor-cast --list' to see attached monitors
-  - 'monitor-cast <side> --text "Hello"'
-  - 'monitor-cast <side> --file image.nfp'  (display NFP image)
-  - 'monitor-cast <side> --clear'
-  - Interactive mode without args (run commands on monitor)
-- Window manager features:
-  - 10 FPS window updates (0.1s timer)
-  - Dead windows automatically removed
-  - Drag windows by title bar
-  - Z-order: clicking a window brings it to front
-  - Monitor-cast creates a "shadow" window showing "[on monitor: side]"
-- apps.conf: added Monitor Cast app to default list
+SECURITY FIX: Login no longer auto-accepts empty password
+  - checkPassword() now returns false for empty hash (was returning true!)
+  - login.lua forces password setup on first boot if root has no password
+  - Can no longer log in as root without authentication
+NEW: Full window manager with colored borders
+  - Each window gets a unique border color (8 colors cycle)
+  - Title bar with [_] minimize  [maximize]  [X] close buttons
+  - Click title bar to drag and move window
+  - Drag bottom-right corner (>) to resize window
+  - Click window to bring to front (z-order)
+NEW: Taskbar at bottom of screen
+  - Shows minimized windows as clickable buttons
+  - Click a minimized window button to restore it
+  - Shows count of open windows
+NEW: Printer support (usr/bin/print.lua)
+  - Print text files to attached Printer block
+  - 'print <file>' to print
+  - 'print --list' to see printers
+  - 'print --status' for paper/ink levels
+  - 'print <file> --title "Title"' for titled pages
+  - Auto-paginates long files
+IMPROVED: Mouse interactions
+  - All window operations are mouse-driven (no keyboard needed)
+  - Click icons to launch, click windows to focus
+  - Click taskbar to restore minimized apps
+  - Drag title bar to move, drag corner to resize
+FIX: Top menu bar menus now open reliably
+  - Click "ArchOS" / "Apps" / "System" to open dropdown
+  - Click a menu item to execute
+  - Click elsewhere to close
 [/whatsnew]
 [files]
 de/gui.lua
-usr/bin/monitor-cast.lua
+bin/login.lua
+lib/users.lua
+usr/bin/print.lua
 etc/apps.conf
 installer.lua
 latest_update.upd
