@@ -132,6 +132,7 @@ usr/bin/filemanager.lua
 usr/bin/gbrowse.lua
 usr/bin/lua-repl.lua
 usr/bin/monitor-app.lua
+usr/bin/monitor-cast.lua
 usr/bin/neofetch.lua
 usr/bin/notes.lua
 usr/bin/paint.lua

@@ -1,39 +1,37 @@
 [version]
-1.4.0
+1.4.1
 [date]
 2026-10-21
 [whatsnew]
-- NEW: Unified GUI Desktop Environment (de/gui.lua)
-  - Replaces the tty/gnome/plasma/xfce quartet with one modern DE
-  - Top menu bar: ArchOS menu, Apps menu, System menu, Clock
-  - Desktop icons (auto-generated from /etc/apps.conf)
-  - Clickable windows with title bars, close button, drag support
-  - Right-click context menu (via Apps menu)
-  - F1 = Run dialog (KRunner-like, type command name to launch)
-  - Whole event loop wrapped in pcall (no crashes on bugs)
-  - Now the DEFAULT desktop environment for new installs
-- NEW: /etc/apps.conf - config file for app list
-  - Format: name|path|icon|color (one app per line)
-  - To add a new app, just append a line - no code changes needed!
-  - To remove an app, delete its line
-  - Comments start with #
-- FIXED: Editor and other apps not getting CLI arguments
-  - Kernel.exec was setting local `arg` instead of _G.arg
-  - Files that do `args = arg or {}` at top level now work
-- FIXED: pinestore search/install
-  - Correct API endpoints: /api/projects/search, /api/project/<id>
-  - Properly parses { success=true, projects=[...] } response
-  - install now extracts URL from project's install_command field
-  - normalizeApp uses real API fields (owner_name, description_short, etc.)
-- Installer now defaults to "gui" DE (was "tty")
-- Help command updated with gui DE and apps.conf instructions
+- BIG: All GUI apps now run in WINDOWS, not full-screen!
+  - Each app gets its own window with title bar, close button, drag
+  - Multiple apps can run simultaneously in separate windows
+  - Click window to focus, click title bar to drag
+  - Click X button to close
+  - Apps share events via cooperative coroutine scheduling
+- NEW: Monitor output support
+  - Each window has an 'M' button in title bar
+  - Click M to send that app's output to an attached Monitor block
+  - Click M again to bring it back to the main screen
+- NEW: monitor-cast command (usr/bin/monitor-cast.lua)
+  - Cast text/images to any Monitor block
+  - 'monitor-cast --list' to see attached monitors
+  - 'monitor-cast <side> --text "Hello"'
+  - 'monitor-cast <side> --file image.nfp'  (display NFP image)
+  - 'monitor-cast <side> --clear'
+  - Interactive mode without args (run commands on monitor)
+- Window manager features:
+  - 10 FPS window updates (0.1s timer)
+  - Dead windows automatically removed
+  - Drag windows by title bar
+  - Z-order: clicking a window brings it to front
+  - Monitor-cast creates a "shadow" window showing "[on monitor: side]"
+- apps.conf: added Monitor Cast app to default list
 [/whatsnew]
 [files]
 de/gui.lua
+usr/bin/monitor-cast.lua
 etc/apps.conf
-bin/pinestore.lua
-kernel/syscall.lua
-bin/help.lua
 installer.lua
 latest_update.upd
 [/files]

@@ -172,6 +172,7 @@ local MANIFEST = {
     "usr/bin/clock.lua", "usr/bin/filemanager.lua",
     "usr/bin/terminal.lua", "usr/bin/system-monitor.lua",
     "usr/bin/webbrowser.lua",  -- new: text-based web browser
+    "usr/bin/monitor-cast.lua",  -- new: cast screen to Monitor block
     -- Desktop environments
     "de/tty.lua", "de/gnome.lua", "de/plasma.lua", "de/xfce.lua", "de/gui.lua",
     -- etc configs
