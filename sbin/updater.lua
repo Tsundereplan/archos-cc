@@ -126,36 +126,146 @@ local function main()
     local freeSpace = fs.getFreeSpace("/")
     setColor(colors.gray)
     print("  Free disk space: " .. tostring(freeSpace) .. " bytes")
-    -- Rough estimate: each file is ~5-20KB. Be conservative.
-    local estimatedNeed = #files * 30000  -- 30KB per file worst case
-    if freeSpace and freeSpace < estimatedNeed then
-        setColor(colors.red)
-        print("")
-        print("  [!] LOW DISK SPACE")
-        print("  Need ~" .. estimatedNeed .. " bytes for " .. #files .. " files")
-        print("  Have only " .. freeSpace .. " bytes free")
-        print("")
-        setColor(colors.yellow)
-        print("  Suggestions to free space:")
-        print("    fs.delete('/backup')          -- remove old backups")
-        print("    fs.delete('/startup.lua.bak') -- remove old startup backup")
-        print("    fs.delete('/installer.lua')   -- remove installer")
-        print("    fs.delete('/var/cache/pacman')-- remove package cache")
-        print("")
-        setColor(colors.white)
-        print("  After freeing space, run 'update install' again.")
-        print("")
-        -- Remove the pending file so we don't loop on every boot
-        fs.delete("/tmp/update.pending")
-        print("[updater] Update aborted due to low disk space.")
-        print("  Booting normally in 5 seconds...")
-        os.sleep(5)
-        return 1
-    end
-    setColor(colors.green)
-    print("  Disk space OK")
     setColor(colors.white)
-    print("")
+
+    -- Calculate total size of new files (estimated)
+    local estUpdateSize = #files * 30000  -- 30KB per file worst case
+    -- Also calculate size of OLD files we'll be replacing
+    local oldFilesSize = 0
+    for _, rel in ipairs(files) do
+        local p = "/" .. rel
+        if fs.exists(p) and not fs.isDir(p) then
+            local szOk, sz = pcall(fs.getSize, p)
+            if szOk then oldFilesSize = oldFilesSize + sz end
+        end
+    end
+
+    -- Check if we have enough space for the update
+    -- We need: estUpdateSize (new files) - oldFilesSize (will be deleted) + overhead
+    local netNeeded = estUpdateSize - oldFilesSize + 5000
+    if freeSpace and freeSpace < netNeeded then
+        -- Not enough space! Try to use a floppy disk.
+        setColor(colors.yellow)
+        print("")
+        print("  [!] Not enough disk space for update!")
+        print("  Need ~" .. netNeeded .. " bytes, have " .. freeSpace)
+        print("")
+
+        -- Check for attached disk drives with disks
+        local diskSide = nil
+        local diskPath = nil
+        local sides = {"top","bottom","left","right","front","back"}
+        for _, side in ipairs(sides) do
+            if peripheral.isPresent(side) and peripheral.getType(side) == "drive" then
+                local drive = peripheral.wrap(side)
+                if drive and drive.hasDisk then
+                    local ok, has = pcall(drive.hasDisk)
+                    if ok and has then
+                        -- Find mount path
+                        local mp = nil
+                        if drive.getMountPath then
+                            local ok2, p = pcall(drive.getMountPath)
+                            if ok2 and p then mp = p end
+                        end
+                        if not mp and drive.getDiskID then
+                            local ok2, id = pcall(drive.getDiskID)
+                            if ok2 and id ~= nil then
+                                mp = id == 0 and "/disk" or "/disk" .. (id + 1)
+                            end
+                        end
+                        if not mp then
+                            for i = 0, 10 do
+                                local p = i == 0 and "/disk" or "/disk" .. (i + 1)
+                                if fs.exists(p) then mp = p; break end
+                            end
+                        end
+                        if mp then
+                            local diskFree = fs.getFreeSpace(mp)
+                            if diskFree and diskFree > oldFilesSize + 5000 then
+                                diskSide = side
+                                diskPath = mp
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+        end
+
+        if diskPath then
+            setColor(colors.green)
+            print("  [OK] Found floppy disk at " .. diskSide)
+            print("  Disk path: " .. diskPath)
+            setColor(colors.cyan)
+            print("")
+            print("  Strategy: Move old files to floppy disk, then download new ones.")
+            print("  Old files will be backed up to: " .. diskPath .. "/update-backup/")
+            print("")
+
+            -- Step 1: Move old files to floppy disk
+            setColor(colors.cyan)
+            print("  Step 1: Moving old files to floppy disk ...")
+            setColor(colors.white)
+            local backupDir = diskPath .. "/update-backup"
+            if not fs.exists(backupDir) then fs.makeDir(backupDir) end
+            local movedCount = 0
+            for _, rel in ipairs(files) do
+                local oldPath = "/" .. rel
+                if fs.exists(oldPath) and not fs.isDir(oldPath) then
+                    local backupPath = backupDir .. "/" .. rel:gsub("/", "_")
+                    local ok, err = pcall(fs.copy, oldPath, backupPath)
+                    if ok then
+                        -- Delete the old file from local disk to free space
+                        pcall(fs.delete, oldPath)
+                        movedCount = movedCount + 1
+                        setColor(colors.green)
+                        term.write(".")
+                        setColor(colors.white)
+                    end
+                end
+            end
+            print("")
+            setColor(colors.green)
+            print("  Moved " .. movedCount .. " old files to floppy disk.")
+            print("  Free space now: " .. fs.getFreeSpace("/") .. " bytes")
+            setColor(colors.white)
+            print("")
+        else
+            -- No disk drive — try deleting old files instead
+            setColor(colors.yellow)
+            print("  No floppy disk available.")
+            print("  Attempting to free space by deleting old files ...")
+            print("")
+
+            -- Delete old files to make room
+            for _, rel in ipairs(files) do
+                local oldPath = "/" .. rel
+                if fs.exists(oldPath) and not fs.isDir(oldPath) then
+                    pcall(fs.delete, oldPath)
+                end
+            end
+            local newFree = fs.getFreeSpace("/")
+            print("  Free space after cleanup: " .. tostring(newFree) .. " bytes")
+            print("")
+
+            if newFree and newFree < estUpdateSize then
+                setColor(colors.red)
+                print("  [FAIL] Still not enough space!")
+                print("  Insert a floppy disk and try again, or increase")
+                print("  computer_space_limit in computercraft-server.toml")
+                setColor(colors.white)
+                fs.delete("/tmp/update.pending")
+                print("  Update aborted. Booting normally in 5s...")
+                os.sleep(5)
+                return 1
+            end
+        end
+    else
+        setColor(colors.green)
+        print("  Disk space OK")
+        setColor(colors.white)
+        print("")
+    end
 
     -- Download each file
     -- Strategy: download the new content first, THEN delete the old file,

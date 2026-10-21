@@ -198,11 +198,14 @@ function Window:drawChrome(isActive)
     box(self.x, self.y, self.width, 1, tb)
     local titleText = self.title:sub(1, self.width - 8)
     writeAt(self.x + 1, self.y, " " .. titleText .. " ", tb, colors.white)
-    -- Buttons in title bar
-    local btnX = self.x + self.width - 5
-    writeAt(btnX, self.y, "_", tb, colors.yellow)         -- minimize
-    writeAt(btnX + 1, self.y, "[]", tb, colors.lightBlue)  -- maximize
-    writeAt(btnX + 3, self.y, "X", tb, colors.red)         -- close
+    -- Buttons in title bar: [_] minimize  [M] maximize  [X] close
+    -- Layout from right to left: X at width-1, M at width-2, _ at width-3
+    local closeX = self.x + self.width - 1
+    local maxX = self.x + self.width - 2
+    local minX = self.x + self.width - 3
+    writeAt(minX, self.y, "_", tb, colors.yellow)
+    writeAt(maxX, self.y, "M", tb, colors.lightBlue)
+    writeAt(closeX, self.y, "X", tb, colors.red)
 
     -- Left border
     setColor(self.borderColor)
@@ -251,11 +254,11 @@ function Window:onCloseButton(x, y)
 end
 
 function Window:onMinButton(x, y)
-    return y == self.y and x == self.x + self.width - 5
+    return y == self.y and x == self.x + self.width - 3
 end
 
 function Window:onMaxButton(x, y)
-    return y == self.y and x >= self.x + self.width - 4 and x <= self.x + self.width - 2
+    return y == self.y and x == self.x + self.width - 2
 end
 
 function Window:onResizeHandle(x, y)

@@ -1,29 +1,24 @@
 [version]
-1.5.2
+1.5.3
 [date]
 2026-10-21
 [whatsnew]
-- FIXED: Terminal (sh.lua) commands now stay inside their window!
-  - Old: sh.lua used Kernel.exec() for each command (ls, cat, etc.)
-    which created new processes that didn't inherit term.redirect
-  - New: sh.lua runs commands IN-PROCESS via load() + pcall()
-  - This means term.redirect (set by window manager) is inherited
-  - Command output stays inside the window, not on full screen
-- NEW: GUI on external Monitor (bin/gui-to-monitor.lua)
-  - Launch the entire desktop on a Monitor block
-  - 'gui-to-monitor <side>' or 'gui-to-monitor --list'
-  - All windows, menus, apps appear on the monitor
-  - Input comes from the computer's terminal
-- NEW: Paint on external Monitor
-  - 'paint --monitor <side>' to draw on a Monitor block
-  - Touch the monitor to draw (monitor_touch events)
-  - See your artwork on the big screen
-- Background commands still use Kernel.exec (can't dofile in bg)
+- FIXED: Close button (X) now works!
+  - Button positions were misaligned: X was drawn at width-2 but
+    onCloseButton checked width-1. Also MaxButton overlapped Close.
+  - Fixed: X at width-1, M at width-2, _ at width-3 (all 1 char each)
+  - All three buttons (minimize/maximize/close) now respond correctly
+- IMPROVED: Update with floppy disk support
+  - When disk space is low, updater now:
+    1. Checks for attached disk drive with floppy disk
+    2. If found: copies old files to /disk/update-backup/ then deletes them
+    3. If no disk: deletes old files directly (no backup)
+    4. Downloads new files into freed space
+  - This means updates work even with very little free disk space
+  - Old files on floppy can be manually restored if update fails
 [/whatsnew]
 [files]
-bin/sh.lua
-bin/gui-to-monitor.lua
-usr/bin/paint.lua
-installer.lua
+de/gui.lua
+sbin/updater.lua
 latest_update.upd
 [/files]
