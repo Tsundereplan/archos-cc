@@ -1,36 +1,26 @@
 [version]
-1.3.0
+1.3.1
 [date]
 2026-10-21
 [whatsnew]
-- BIOS Setup is back (F2) - now works via pcall for safety
-- Plasma DE: fixed minimize button (windows now properly hidden)
-- Plasma DE: taskbar buttons restore minimized windows
-- Plasma DE: whole event loop wrapped in pcall - no more crashes
-- Plasma DE: more applications in Kicker menu (19 apps now)
-- Fixed random Unicode symbols appearing as garbage (replaced with ASCII)
-- Shell now resets terminal colors after each command (no more palette mess)
-- New GUI apps: clock, filemanager, terminal, system-monitor
-- DE now starts before text login (DE handles login internally)
+- File Manager v2 (usr/bin/filemanager.lua) - completely rewritten:
+  * Path breadcrumb bar on each pane
+  * Status bar showing file size, type, modified
+  * Sort by name/size/date (cycle with 's')
+  * Filter files with '/' (substring match)
+  * Confirmation dialogs with Y/N (no accidental deletes)
+  * Input dialogs for rename/mkdir/newfile
+  * Progress bar for copy/move operations
+  * Quick-jump to file by pressing first letter
+  * Bookmarks: Ctrl+1..5 save, Alt+1..5 jump
+  * Color-coded icons by file extension
+  * 'h' toggles hidden files, 'q' quits
+- New cleanup command (bin/cleanup.lua) - frees disk space
+- Help command updated with new apps and detailed filemanager hotkeys
 [/whatsnew]
 [files]
-bios/bios.lua
-bin/sh.lua
-bin/help.lua
-installer.lua
-de/plasma.lua
-de/gnome.lua
-de/xfce.lua
-de/tty.lua
-usr/bin/settings.lua
-usr/bin/taskmgr.lua
-usr/bin/sysmgr.lua
-usr/bin/redstone-panel.lua
-bin/tree.lua
-lib/fs.lua
-usr/bin/clock.lua
 usr/bin/filemanager.lua
-usr/bin/terminal.lua
-usr/bin/system-monitor.lua
+bin/help.lua
+bin/cleanup.lua
 latest_update.upd
 [/files]
