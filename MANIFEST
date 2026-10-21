@@ -63,6 +63,7 @@ bootloader/default
 bootloader/entries/archos.lua
 bootloader/entries/craftos.lua
 de/gnome.lua
+de/gui.lua
 de/plasma.lua
 de/tty.lua
 de/xfce.lua
@@ -72,6 +73,7 @@ docs/COMMANDS.md
 docs/DEVELOPMENT.md
 docs/GITHUB_SETUP.md
 docs/INSTALL.md
+etc/apps.conf
 etc/default-de
 etc/fstab
 etc/group

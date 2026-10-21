@@ -109,41 +109,51 @@ end
 
 function PineStore.install(appId)
     if not http then return nil, "HTTP API not enabled" end
-    -- pinestore.cc uses install commands like:
-    --   wget run https://pinestore.cc/api/projects/install/<id>
-    -- We fetch the install script URL directly.
-    local url = "https://pinestore.cc/api/projects/install/" .. urlEncode(appId)
-    local body = fetchURL(url)
-    if not body then
-        -- Fallback: try the project info endpoint and see if it has an install_command
-        local info = PineStore.info(appId)
-        if info and type(info) == "table" and info.install_command then
-            local cmd = info.install_command
-            -- Extract URL from "wget run <URL>"
-            local installURL = cmd:match("https?://%S+")
-            if installURL then
-                body = fetchURL(installURL)
-            end
-        end
+    -- First, get the project info to find install_command
+    local info = PineStore.info(appId)
+    if not info or type(info) ~= "table" then
+        return nil, "could not fetch project info for ID " .. tostring(appId)
     end
-    if not body then return nil, "failed to fetch install script" end
+    -- API response format: { success=true, project={...} }
+    local project = info.project or info
+    if not project then
+        return nil, "no project info in API response"
+    end
+    local installCommand = project.install_command
+    if not installCommand or installCommand == "" then
+        return nil, "project has no install_command"
+    end
+    -- install_command is like "wget run https://example.com/install.lua"
+    -- Extract the URL
+    local installURL = installCommand:match("https?://%S+")
+    if not installURL then
+        return nil, "could not extract URL from install_command: " .. installCommand
+    end
+    -- Fetch the install script
+    local body = fetchURL(installURL)
+    if not body then
+        return nil, "failed to fetch install script from " .. installURL
+    end
     -- Execute the install script (it returns lua code)
     local fn, err = load(body, "pinestore-install", "t", _G)
-    if not fn then return nil, err end
+    if not fn then return nil, "compile error: " .. tostring(err) end
     return pcall(fn)
 end
 
--- Normalize an app entry from the API response. The API may return a Lua table
--- (when textutils.unserializeJSON was used) or a raw string.
+-- Normalize an app entry from the API response.
+-- Pinestore.cc API returns projects with fields:
+--   id, name, owner_name, description_short, description,
+--   install_command, downloads, downloads_recent, views, tags
 local function normalizeApp(entry)
     if type(entry) == "table" then
         return {
             id          = entry.id or entry.appId or entry.slug or "?",
             name        = entry.name or entry.title or entry.appName or "?",
-            description = entry.description or entry.desc or "",
-            author      = entry.author or entry.developer or "?",
+            description = entry.description_short or entry.description or entry.desc or "",
+            author      = entry.owner_name or entry.author or entry.developer or "?",
             version     = entry.version or "?",
             downloads   = entry.downloads or entry.installs or "?",
+            install_command = entry.install_command,
         }
     end
     return nil
@@ -175,22 +185,36 @@ if sub == "search" then
         return 1
     end
 
-    -- Normalize: results may be a table of apps, or a single app, or raw text
-    local apps = {}
+    -- API response: { success=true, projects=[{...}, ...] }
+    -- Extract the projects array
+    local projects
     if type(results) == "table" then
-        if results[1] then
-            for _, e in ipairs(results) do
-                local a = normalizeApp(e)
-                if a then table.insert(apps, a) end
-            end
+        if results.projects and type(results.projects) == "table" then
+            projects = results.projects
+        elseif results[1] then
+            -- Already an array of projects
+            projects = results
         elseif results.name or results.id then
-            local a = normalizeApp(results)
-            if a then table.insert(apps, a) end
+            -- Single project
+            projects = { results }
         end
     elseif type(results) == "string" then
         -- Fallback: just print the raw response
         print(results)
         return 0
+    end
+
+    if not projects or #projects == 0 then
+        c(colors.yellow, function() print("[pinestore] No matching apps found for '" .. query .. "'.") end)
+        print("  Try a different search term.")
+        return 0
+    end
+
+    -- Normalize each project
+    local apps = {}
+    for _, e in ipairs(projects) do
+        local a = normalizeApp(e)
+        if a then table.insert(apps, a) end
     end
 
     if #apps == 0 then
@@ -268,23 +292,24 @@ elseif sub == "info" then
         return 1
     end
 
-    local app = nil
+    -- API response: { success=true, project={...} }
+    local project
     if type(results) == "table" then
-        if results[1] then
-            for _, e in ipairs(results) do
-                local a = normalizeApp(e)
-                if a and (tostring(a.id) == appId or tostring(a.name) == appId) then
-                    app = a; break
-                end
-            end
-            if not app then app = normalizeApp(results[1]) end
-        else
-            app = normalizeApp(results)
+        if results.project then
+            project = results.project
+        elseif results.id or results.name then
+            project = results
         end
     end
 
+    local app = project and normalizeApp(project)
+
     if not app then
         c(colors.yellow, function() print("[pinestore] No info available for '" .. appId .. "'.") end)
+        if type(results) == "string" then
+            print("Raw response:")
+            print(results:sub(1, 500))
+        end
         return 1
     end
 

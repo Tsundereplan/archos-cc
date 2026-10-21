@@ -173,12 +173,13 @@ local MANIFEST = {
     "usr/bin/terminal.lua", "usr/bin/system-monitor.lua",
     "usr/bin/webbrowser.lua",  -- new: text-based web browser
     -- Desktop environments
-    "de/tty.lua", "de/gnome.lua", "de/plasma.lua", "de/xfce.lua",
+    "de/tty.lua", "de/gnome.lua", "de/plasma.lua", "de/xfce.lua", "de/gui.lua",
     -- etc configs
     "etc/passwd", "etc/group", "etc/fstab", "etc/hostname",
     "etc/issue", "etc/network.conf", "etc/os-release",
     "etc/locale/en.lc", "etc/shadow", "etc/profile",
     "etc/default-de", "etc/motd", "etc/version",
+    "etc/apps.conf",
     "etc/systemd/system/networkd.service",
     "etc/systemd/system/mountd.service",
     "etc/systemd/system/pnpd.service",
@@ -682,19 +683,22 @@ local function firstBootPrompt()
     print("  Choose default desktop environment:")
     setFG(C.reset)
     setFG(C.accent)
-    print("    1) tty      Arch TTY (text only, minimal)")
-    print("    2) gnome     GNOME-like (simple GUI)")
-    print("    3) plasma    KDE Plasma-like (advanced GUI)")
-    print("    4) xfce      XFCE-like (lightweight GUI)")
+    print("    1) gui      Unified GUI desktop (RECOMMENDED)")
+    print("               Reads /etc/apps.conf for app list")
+    print("    2) tty      Arch TTY (text only, minimal)")
+    print("    3) gnome    GNOME-like (simple GUI, legacy)")
+    print("    4) plasma   KDE Plasma-like (advanced GUI, legacy)")
+    print("    5) xfce     XFCE-like (lightweight GUI, legacy)")
     setFG(C.reset)
     setFG(C.accent)
-    term.write("  choice [1-4, default=1]: ")
+    term.write("  choice [1-5, default=1]: ")
     setFG(C.reset)
     local choice = read()
-    local de = "tty"
-    if choice == "2" then de = "gnome"
-    elseif choice == "3" then de = "plasma"
-    elseif choice == "4" then de = "xfce" end
+    local de = "gui"
+    if choice == "2" then de = "tty"
+    elseif choice == "3" then de = "gnome"
+    elseif choice == "4" then de = "plasma"
+    elseif choice == "5" then de = "xfce" end
     local f = fs.open("/etc/default-de", "w")
     if f then f.write(de); f.close() end
     setFG(C.ok)

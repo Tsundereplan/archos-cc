@@ -142,11 +142,18 @@ function Kernel.exec(filePath, args, env)
     end
 
     local proc = Kernel.spawn(function()
-        -- Set up argv
-        local oldArg = arg
-        arg = {[0] = filePath, table.unpack(args)}
+        -- Set up argv globally so the loaded file can see it via _G.arg
+        -- (Lua's built-in `arg` is only local to vararg functions, so
+        -- files that just do `args = arg or {}` at the top level would
+        -- see nil. We set _G.arg explicitly.)
+        local oldArg = _G.arg
+        _G.arg = {[0] = filePath, table.unpack(args)}
+        -- Also set local arg for compatibility with files that expect
+        -- it (Lua 5.1's vararg behavior)
+        arg = _G.arg
         -- Run the file
         local ok, rerr = pcall(fn, table.unpack(args))
+        _G.arg = oldArg
         arg = oldArg
         if not ok then
             io.stderr:write("[exec] " .. tostring(rerr) .. "\n")
