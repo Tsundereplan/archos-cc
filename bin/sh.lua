@@ -398,6 +398,7 @@ function Shell.runCommand(tokens, redirects)
 
     -- Setup redirect for external command
     local redirectFile = nil
+    local oldRedirect = nil
     if redirects.stdout then
         local mode = redirects.append and "a" or "w"
         redirectFile = fs.open(redirects.stdout, mode)
@@ -405,35 +406,62 @@ function Shell.runCommand(tokens, redirects)
             io.stderr:write("sh: cannot write to " .. redirects.stdout .. "\n")
             return 1
         end
-    end
-
-    -- Spawn as a child process
-    local Kernel = _G.Kernel
-    local pid = Kernel.exec(path, args)
-    if not pid then
-        if redirectFile then redirectFile.close() end
-        io.stderr:write("sh: failed to spawn: " .. path .. "\n")
-        return 1
+        oldRedirect = term.redirect and term.redirect(redirectFile) or nil
     end
 
     if redirects.background then
-        -- Don't wait; just print the pid
-        print("[background] pid=" .. pid)
-        if redirectFile then
-            -- Don't close if backgrounded (the process still writes to it)
-            -- Actually for simplicity, we don't support bg with redirect
-            redirectFile.close()
+        -- Background: still use Kernel.exec (can't dofile in background)
+        local Kernel = _G.Kernel
+        local pid = Kernel.exec(path, args)
+        if pid then
+            print("[background] pid=" .. pid)
         end
+        if redirectFile then redirectFile.close() end
+        if oldRedirect then term.redirect(oldRedirect) end
         return 0
     end
 
-    -- Wait for the process to finish
-    local exitCode = Kernel.wait(pid)
+    -- Run the command IN-PROCESS (not via Kernel.exec).
+    -- This way, term.redirect (set by the GUI window manager) is
+    -- inherited, and the command's output goes to the correct window.
+    local f = fs.open(path, "r")
+    if not f then
+        if redirectFile then redirectFile.close() end
+        if oldRedirect then term.redirect(oldRedirect) end
+        io.stderr:write("sh: cannot open: " .. path .. "\n")
+        return 1
+    end
+    local content = f.readAll()
+    f.close()
+
+    local cmdFn, cmdErr = load(content, path, "t", _G)
+    if not cmdFn then
+        if redirectFile then redirectFile.close() end
+        if oldRedirect then term.redirect(oldRedirect) end
+        io.stderr:write("sh: " .. tostring(cmdErr) .. "\n")
+        return 1
+    end
+
+    -- Set up arg for the command
+    local savedArg = _G.arg
+    _G.arg = {[0] = path}
+    for i, a in ipairs(args) do _G.arg[i] = a end
+
+    local ok, err = pcall(cmdFn, unpack(args))
+
+    -- Restore arg
+    _G.arg = savedArg
 
     -- Close redirect file
     if redirectFile then redirectFile.close() end
+    if oldRedirect then term.redirect(oldRedirect) end
 
-    return exitCode or 0
+    if not ok then
+        io.stderr:write(tostring(err) .. "\n")
+        return 1
+    end
+
+    return 0
 end
 
 -- Execute a full command line (possibly with pipeline, conditionals)

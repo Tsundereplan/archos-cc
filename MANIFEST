@@ -19,6 +19,7 @@ bin/find.lua
 bin/free.lua
 bin/git.lua
 bin/grep.lua
+bin/gui-to-monitor.lua
 bin/head.lua
 bin/help.lua
 bin/hostname.lua

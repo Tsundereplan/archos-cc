@@ -159,6 +159,7 @@ local MANIFEST = {
     "bin/cleanup.lua",  -- new: free disk space
     "bin/install-to-disk.lua",  -- new: install OS to floppy disk
     "bin/internet.lua",  -- new: internet connection checker
+    "bin/gui-to-monitor.lua",  -- new: GUI on external monitor
     -- sbin
     "sbin/init.lua", "sbin/fsck.lua", "sbin/mkfs.lua",
     "sbin/mkuser.lua", "sbin/networkd.lua", "sbin/mountd.lua",

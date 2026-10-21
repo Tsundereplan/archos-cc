@@ -1,26 +1,29 @@
 [version]
-1.5.1
+1.5.2
 [date]
 2026-10-21
 [whatsnew]
-- FIXED: GUI now launches FIRST, no text login!
-  - Built-in graphical login screen (no text mode at all)
-  - Login window with User/Pass fields, Tab to switch, Enter to login
-  - Desktop appears immediately after successful login
-- FIXED: Window borders now VISIBLE!
-  - window.create() uses inner coords (offset by border)
-  - Chrome (borders, title bar, buttons) drawn ON TOP of content
-  - Each window has unique colored border (8 colors cycle)
-- FIXED: Keyboard events (Enter, etc.) now delivered to windows!
-  - Key/char/paste events go to active window via resumeKey()
-  - Apps inside windows can now receive Enter, Backspace, etc.
-  - Terminal, editor, and other apps now work properly in windows
-- IMPROVED: Mouse events properly translated to window coordinates
-  - resumeMouse() converts screen coords to window-relative
-  - Clicks only delivered if inside inner content area
-  - Mouse scroll/up/drag all handled
+- FIXED: Terminal (sh.lua) commands now stay inside their window!
+  - Old: sh.lua used Kernel.exec() for each command (ls, cat, etc.)
+    which created new processes that didn't inherit term.redirect
+  - New: sh.lua runs commands IN-PROCESS via load() + pcall()
+  - This means term.redirect (set by window manager) is inherited
+  - Command output stays inside the window, not on full screen
+- NEW: GUI on external Monitor (bin/gui-to-monitor.lua)
+  - Launch the entire desktop on a Monitor block
+  - 'gui-to-monitor <side>' or 'gui-to-monitor --list'
+  - All windows, menus, apps appear on the monitor
+  - Input comes from the computer's terminal
+- NEW: Paint on external Monitor
+  - 'paint --monitor <side>' to draw on a Monitor block
+  - Touch the monitor to draw (monitor_touch events)
+  - See your artwork on the big screen
+- Background commands still use Kernel.exec (can't dofile in bg)
 [/whatsnew]
 [files]
-de/gui.lua
+bin/sh.lua
+bin/gui-to-monitor.lua
+usr/bin/paint.lua
+installer.lua
 latest_update.upd
 [/files]

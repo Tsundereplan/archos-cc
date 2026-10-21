@@ -25,6 +25,32 @@ end
 
 local args = arg or {...}
 
+-- Check for --monitor <side> argument
+local monitorRedirect = nil
+local useMonitorTouch = false
+for i, a in ipairs(args) do
+    if a == "--monitor" and args[i+1] then
+        local side = args[i+1]
+        if peripheral.isPresent(side) and peripheral.getType(side) == "monitor" then
+            monitorRedirect = peripheral.wrap(side)
+            useMonitorTouch = true
+            -- Remove these two args so filename parsing works
+            table.remove(args, i)
+            table.remove(args, i)
+        end
+        break
+    end
+end
+
+-- If using a monitor, redirect term to it
+if monitorRedirect then
+    monitorRedirect.setBackgroundColor(colors.black)
+    monitorRedirect.setTextColor(colors.white)
+    monitorRedirect.clear()
+    monitorRedirect.setCursorPos(1, 1)
+    term.redirect(monitorRedirect)
+end
+
 -- Layout dimensions (adaptive to screen, capped at 50x20)
 local W, H = term.getSize()
 local CANVAS_W = math.min(50, W)
@@ -384,6 +410,10 @@ local function main()
             if state.tool == "brush" or state.tool == "eraser" then
                 applyTool(mx, my)
             end
+        elseif ev == "monitor_touch" and useMonitorTouch then
+            -- monitor_touch: side, x, y
+            local mx, my = event[3], event[4]
+            applyTool(mx, my)
         end
     end
 
@@ -391,6 +421,18 @@ local function main()
     term.setTextColor(colors.white)
     term.clear()
     term.setCursorPos(1, 1)
+    -- If we redirected to a monitor, restore the original term
+    if monitorRedirect and term.redirect then
+        -- term.redirect was already called above; we need to redirect
+        -- back to the original. Since we don't have a saved reference,
+        -- we redirect to term.native() if available, or just clear the
+        -- monitor.
+        if term.native then
+            term.redirect(term.native())
+        end
+        monitorRedirect.clear()
+        monitorRedirect.setCursorPos(1, 1)
+    end
     return 0
 end
 
