@@ -23,6 +23,7 @@ bin/head.lua
 bin/help.lua
 bin/hostname.lua
 bin/ifconfig.lua
+bin/install-to-disk.lua
 bin/kill.lua
 bin/login.lua
 bin/ls.lua

@@ -157,6 +157,7 @@ local MANIFEST = {
     "bin/update.lua",  -- new: replaces arch-update.lua
     "bin/help.lua",  -- new: command reference
     "bin/cleanup.lua",  -- new: free disk space
+    "bin/install-to-disk.lua",  -- new: install OS to floppy disk
     -- sbin
     "sbin/init.lua", "sbin/fsck.lua", "sbin/mkfs.lua",
     "sbin/mkuser.lua", "sbin/networkd.lua", "sbin/mountd.lua",
