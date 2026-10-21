@@ -4,6 +4,9 @@
     Exposes a Kernel.* API that processes can use to interact with the OS.
     These wrap Process/Scheduler/Permissions with safety checks.
 
+    IMPORTANT: cached in _G._ARCHOS_SYSCALL so all callers share the
+    same instance.
+
     Available syscalls:
       Kernel.spawn(fn, opts)       -> pid
       Kernel.kill(pid)             -> bool
@@ -20,6 +23,11 @@
       Kernel.exec(path, args, env) -> exitCode  (run a file as a child process)
       Kernel.pipe(readFn, writeFn)  -> sets up IPC pipe (advanced)
 ]]
+
+-- Module cache
+if _G._ARCHOS_SYSCALL then
+    return _G._ARCHOS_SYSCALL
+end
 
 local Process  = dofile("/kernel/process.lua")
 local Scheduler = dofile("/kernel/scheduler.lua")
@@ -170,4 +178,6 @@ end
 -- Re-export signals
 Kernel.SIG = Process.SIGNALS
 
+-- Cache the Syscall module.
+_G._ARCHOS_SYSCALL = Kernel
 return Kernel

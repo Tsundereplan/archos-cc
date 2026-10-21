@@ -5,6 +5,9 @@
     Different from os.pullEvent: events here can be observed by multiple
     listeners simultaneously.
 
+    IMPORTANT: cached in _G._ARCHOS_EVENTS so all callers share the
+    same listener registry.
+
     Listeners:
       subscribe(eventType, callback)   -> listener id
       unsubscribe(id)
@@ -17,6 +20,11 @@
       * Network packet arrival
       * System shutdown signals
 ]]
+
+-- Module cache
+if _G._ARCHOS_EVENTS then
+    return _G._ARCHOS_EVENTS
+end
 
 local Events = {}
 
@@ -104,4 +112,6 @@ Events.TYPES = {
     PACKAGE_REMOVE      = "archos_pkg_remove",
 }
 
+-- Cache the Events module.
+_G._ARCHOS_EVENTS = Events
 return Events

@@ -104,6 +104,14 @@ function Kernel.main(ctx)
     _G.Drivers = driversLoaded
 
     -- Load arch subsystem (pacman + systemd)
+    -- NOTE: we load the systemd module but DO NOT call systemd.init()
+    -- here. systemd.init() auto-starts enabled services, which would
+    -- spawn child processes via Kernel.exec() before init is created.
+    -- Those children would consume PIDs 1, 2, 3... leaving init with a
+    -- higher PID. The scheduler then can't find init at PID 1 and
+    -- exits with "no processes remaining".
+    -- We defer systemd.init() to inside initFunc() below, so init is
+    -- always PID 1.
     print("[kernel] Loading Arch subsystem ...")
     local pacman_ok, pacman = pcall(dofile, "/lib/arch/pacman.lua")
     if pacman_ok then _G.Pacman = pacman end
@@ -111,7 +119,8 @@ function Kernel.main(ctx)
     local systemd_ok, systemd = pcall(dofile, "/lib/arch/systemd.lua")
     if systemd_ok and systemd then
         _G.Systemd = systemd
-        systemd.init()
+        -- systemd.init() is called from initFunc() below, AFTER init
+        -- is spawned with PID 1.
     end
 
     -- Create essential directories
@@ -146,7 +155,9 @@ function Kernel.main(ctx)
         return
     end
 
-    -- Build init function: load /sbin/init.lua and run it as PID 1
+    -- Build init function: load /sbin/init.lua and run it as PID 1.
+    -- systemd.init() is called from INSIDE initFunc (after dofile of
+    -- /sbin/init.lua starts), so it doesn't steal PID 1 from init.
     local function initFunc()
         local ok, initModule = pcall(dofile, initPath)
         if not ok then
@@ -154,6 +165,16 @@ function Kernel.main(ctx)
             print("[init] Failed to load /sbin/init.lua: " .. tostring(initModule))
             os.sleep(3)
             return 1
+        end
+        -- Now that we're inside the init process (PID 1), we can
+        -- safely start systemd services. They'll be children of init.
+        if _G.Systemd and _G.Systemd.init then
+            local sOk, sErr = pcall(_G.Systemd.init)
+            if not sOk and term.isColor() then
+                term.setTextColor(colors.yellow)
+                print("[init] systemd.init() warning: " .. tostring(sErr))
+                if term.isColor() then term.setTextColor(colors.white) end
+            end
         end
         if type(initModule) == "table" and initModule.run then
             initModule.run()
@@ -165,7 +186,10 @@ function Kernel.main(ctx)
         end
     end
 
-    -- Force PID 1 for init by spawning it explicitly and patching the pid
+    -- Force PID 1 for init. Process.spawn uses an internal counter
+    -- (nextPID), so we need to make sure no other process was spawned
+    -- before this point. We've explicitly deferred systemd.init() to
+    -- inside initFunc(), so we should be safe here.
     local initProc = Process.spawn(initFunc, {
         ppid = 0,
         name = "init",
@@ -183,19 +207,13 @@ function Kernel.main(ctx)
         },
     })
 
-    -- Hack: ensure init is at PID 1 (re-assign)
-    -- Since Process.spawn uses an internal counter, we swap entries
+    -- Verify init got PID 1 (it should, since no other process was
+    -- spawned before this point). If somehow it didn't, log a warning.
     if initProc.pid ~= 1 then
-        -- Force process table swap
-        local real1 = Process.get(1)
-        if real1 then
-            -- If there's already a PID 1 (unlikely since this is early boot), kill it
-            Process.kill(1)
-        end
-        -- Move our init to PID 1
-        local oldPid = initProc.pid
-        -- This is hacky; we can't actually renumber pids cleanly.
-        -- For now, just leave it and have the scheduler look for "init" by name.
+        if term.isColor() then term.setTextColor(colors.yellow) end
+        print("[kernel] WARNING: init got PID " .. initProc.pid .. " instead of 1")
+        print("[kernel] This may cause the scheduler to malfunction.")
+        if term.isColor() then term.setTextColor(colors.white) end
     end
 
     -- Run scheduler

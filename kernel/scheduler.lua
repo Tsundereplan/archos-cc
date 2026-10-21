@@ -4,16 +4,14 @@
     Runs the main event loop. Pulls events from CraftOS via os.pullEventRaw()
     and dispatches them to processes that are waiting for them.
 
-    Strategy:
-      1. Each tick: resume all ready processes once.
-      2. Pull next event (with small timeout).
-      3. Dispatch event to each process whose waitFor matches.
-         (If proc.waitFor is nil, the process accepts any event.)
-      4. Process sleep timers: resume processes whose sleepUntil has passed.
-      5. Repeat.
-
-    PID 1 (init) is the system process - it never dies, otherwise kernel panics.
+    IMPORTANT: cached in _G._ARCHOS_SCHEDULER so all callers share the
+    same instance (scheduler state, readyQueue, running flag).
 ]]
+
+-- Module cache
+if _G._ARCHOS_SCHEDULER then
+    return _G._ARCHOS_SCHEDULER
+end
 
 local Process = dofile("/kernel/process.lua")
 
@@ -250,4 +248,6 @@ function Scheduler.stats()
     }
 end
 
+-- Cache the Scheduler module.
+_G._ARCHOS_SCHEDULER = Scheduler
 return Scheduler

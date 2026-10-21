@@ -5,27 +5,19 @@
     environment. The kernel scheduler (scheduler.lua) round-robins
     between them, dispatching events.
 
-    Process state machine:
-        created -> ready -> running -> sleeping/Waiting -> ready -> ... -> dead
-
-    Each process has:
-      pid           - unique numeric id (1..N)
-      ppid          - parent pid
-      uid           - owner user id
-      gid           - owner group id
-      cwd           - current working directory
-      env           - environment table (PATH, HOME, USER, ...)
-      argv          - command line arguments
-      coro          - the underlying coroutine
-      status        - "ready", "running", "sleeping", "waiting", "dead"
-      exitCode      - exit code (set on death)
-      window        - term.redirect target (or nil for inherited)
-      children      - list of pids spawned by this process
-      signals       - queued signals (TERM, KILL, INT)
-      name          - process name (for ps/top)
-      startTime     - os.clock() at creation
-      cpuTime       - accumulated os.clock() delta
+    IMPORTANT: This module is loaded by multiple files (init.lua,
+    scheduler.lua, syscall.lua, permissions.lua). Without caching,
+    each dofile() would create a SEPARATE Process table, and
+    scheduler would see an empty process list (because Kernel.exec
+    adds to syscall's copy, not scheduler's copy). We cache the
+    module in _G._ARCHOS_PROCESS to ensure all callers share the
+    same table.
 ]]
+
+-- Module cache: return the same Process table on every dofile() call.
+if _G._ARCHOS_PROCESS then
+    return _G._ARCHOS_PROCESS
+end
 
 local Process = {}
 Process.__index = Process
@@ -362,4 +354,12 @@ function Process.reap(maxAge)
     end
 end
 
+-- Cache the Process module so subsequent dofile() calls return the same
+-- table. This is critical: scheduler.lua, syscall.lua, permissions.lua,
+-- and init.lua all do `dofile("/kernel/process.lua")`. Without caching,
+-- each call would create a fresh Process table, and state (process list,
+-- next PID counter) would NOT be shared. Kernel.exec would spawn into
+-- one Process table while scheduler looks at another, sees zero
+-- processes, and exits with "No processes remaining".
+_G._ARCHOS_PROCESS = Process
 return Process
