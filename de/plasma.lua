@@ -222,6 +222,7 @@ local function drawKickoff()
         { name = "Files (graphical)", action = "/usr/bin/gbrowse.lua" },
         { name = "File Manager",      action = "/usr/bin/filemanager.lua" },
         { name = "Multi-Tab Terminal", action = "/usr/bin/terminal.lua" },
+        { name = "Web Browser",       action = "/usr/bin/webbrowser.lua" },
         { name = "Text Editor",       action = "/usr/bin/editor.lua" },
         { name = "Settings",          action = "/usr/bin/settings.lua" },
         { name = "Notes",             action = "/usr/bin/notes.lua" },
@@ -474,6 +475,7 @@ local function mainLoop()
                     local apps = {
                         "/bin/sh.lua", "/usr/bin/browser.lua", "/usr/bin/gbrowse.lua",
                         "/usr/bin/filemanager.lua", "/usr/bin/terminal.lua",
+                        "/usr/bin/webbrowser.lua",
                         "/usr/bin/editor.lua", "/usr/bin/settings.lua", "/usr/bin/notes.lua",
                         "/usr/bin/paint.lua", "/usr/bin/calculator.lua", "/usr/bin/clock.lua",
                         "/usr/bin/player.lua", "/usr/bin/system-monitor.lua",

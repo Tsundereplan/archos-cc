@@ -24,6 +24,7 @@ bin/help.lua
 bin/hostname.lua
 bin/ifconfig.lua
 bin/install-to-disk.lua
+bin/internet.lua
 bin/kill.lua
 bin/login.lua
 bin/ls.lua
@@ -140,6 +141,7 @@ usr/bin/system-monitor.lua
 usr/bin/taskmgr.lua
 usr/bin/terminal.lua
 usr/bin/top.lua
+usr/bin/webbrowser.lua
 usr/share/icons/.gitkeep
 var/cache/pacman/pkg/.gitkeep
 var/db/permissions/.gitkeep

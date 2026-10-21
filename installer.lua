@@ -158,6 +158,7 @@ local MANIFEST = {
     "bin/help.lua",  -- new: command reference
     "bin/cleanup.lua",  -- new: free disk space
     "bin/install-to-disk.lua",  -- new: install OS to floppy disk
+    "bin/internet.lua",  -- new: internet connection checker
     -- sbin
     "sbin/init.lua", "sbin/fsck.lua", "sbin/mkfs.lua",
     "sbin/mkuser.lua", "sbin/networkd.lua", "sbin/mountd.lua",
@@ -170,6 +171,7 @@ local MANIFEST = {
     "usr/bin/paint.lua", "usr/bin/monitor-app.lua", "usr/bin/redstone-panel.lua",
     "usr/bin/clock.lua", "usr/bin/filemanager.lua",
     "usr/bin/terminal.lua", "usr/bin/system-monitor.lua",
+    "usr/bin/webbrowser.lua",  -- new: text-based web browser
     -- Desktop environments
     "de/tty.lua", "de/gnome.lua", "de/plasma.lua", "de/xfce.lua",
     -- etc configs

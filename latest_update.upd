@@ -1,25 +1,35 @@
 [version]
-1.3.2
+1.3.3
 [date]
 2026-10-21
 [whatsnew]
-- New: install-to-disk command - create bootable ArchOS-CC install disk
-  * Copies entire system to floppy disk
-  * Disk boots on any Advanced Computer with Disk Drive
-  * Install menu: Install to local / Run from disk / CraftOS shell
-  * Supports --list to see drives, <side> argument to skip prompt
-- New: update backup subcommand - manual system backup
-  * 'update backup' asks where to back up
-  * 'update backup disk' goes directly to floppy disk
-- update install now offers backup to floppy disk option
-  * Detects disk drives automatically
-  * Useful when local disk is full
-- help command updated with all new disk/backup commands
+- FIXED: CraftOS now boots from bootloader without interruption
+  - Bootloader returns to menu after kernel exits (was hanging before)
+  - craftos-shim.lua recognized as script-type kernel (not just function)
+- NEW: Web Browser (usr/bin/webbrowser.lua)
+  - Fetch and display web pages via HTTP API
+  - HTML to text conversion (strips tags, decodes entities)
+  - URL input with arrow-key history
+  - Bookmarks (Ctrl+D to add, 'b' to view)
+  - DuckDuckGo Lite search ('s' to search)
+  - Page scrolling (Page Up/Down, arrows)
+  - Save current page to file (Ctrl+S)
+  - Back/Forward navigation (left/right arrows)
+- NEW: Internet connection checker (bin/internet.lua)
+  - 'internet' - check if HTTP works (tests example.com, github.com)
+  - 'internet enable' - show step-by-step server config instructions
+  - 'internet test' - run connectivity tests
+  - Detects attached modems and explains how to connect them
+- Bootloader: kernel-exit returns to GRUB menu (no more hanging)
+- Plasma Kicker: added Web Browser to app launcher
+- Help: added internet and webbrowser commands
 [/whatsnew]
 [files]
-bin/install-to-disk.lua
-bin/update.lua
+bootloader/bootloader.lua
+usr/bin/webbrowser.lua
+bin/internet.lua
 bin/help.lua
+de/plasma.lua
 installer.lua
 latest_update.upd
 [/files]

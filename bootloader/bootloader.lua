@@ -240,48 +240,54 @@ function Bootloader.bootEntry(entryName)
         return false
     end
 
-    -- Kernel may be a function or a table with .run()
+    -- Kernel can be:
+    --   * a function          -> call it directly with ctx
+    --   * a table with .run   -> call kernel.run(ctx)
+    --   * any other value     -> the script already ran during dofile
+    --                             (e.g. craftos-shim.lua which returns
+    --                             a boolean and runs the shell inline)
+    -- For the third case, just return - the script already did its job.
     if type(kernel) == "table" and kernel.run then
         kernel = kernel.run
     end
 
-    if type(kernel) ~= "function" then
-        if term.isColor() then term.setTextColor(colors.red) end
-        print("[BOOT] Kernel is not callable: " .. type(kernel))
-        os.sleep(3)
-        return false
-    end
+    if type(kernel) == "function" then
+        -- Hand off to kernel with full context
+        local args = entry.args or {}
+        local ctx = {
+            entry      = entry,
+            name       = entryName,
+            bios       = _G.BIOS,
+            bootloader = Bootloader,
+            args       = args,
+        }
+        -- Stash for kernel access
+        _G.BOOT_CONTEXT = ctx
 
-    -- Hand off to kernel with full context
-    local args = entry.args or {}
-    local ctx = {
-        entry      = entry,
-        name       = entryName,
-        bios       = _G.BIOS,
-        bootloader = Bootloader,
-        args       = args,
-    }
-    -- Stash for kernel access
-    _G.BOOT_CONTEXT = ctx
-
-    local ok2, err = pcall(kernel, ctx)
-    if not ok2 then
-        if term.isColor() then term.setTextColor(colors.red) end
-        print("")
-        print("[BOOT] Kernel panic: " .. tostring(err))
-        print("")
-        if term.isColor() then term.setTextColor(colors.yellow) end
-        print("  System halted. Press Ctrl+R to reboot, Ctrl+T for shell.")
-        -- Halt - wait for user action
-        while true do
-            local ev = {os.pullEvent()}
-            if ev[1] == "key" and ev[2] == keys.leftCtrl then
-                -- Will be combined with 'r' or 't' - just continue
+        local ok2, err = pcall(kernel, ctx)
+        if not ok2 then
+            if term.isColor() then term.setTextColor(colors.red) end
+            print("")
+            print("[BOOT] Kernel panic: " .. tostring(err))
+            print("")
+            if term.isColor() then term.setTextColor(colors.yellow) end
+            print("  System halted. Press Ctrl+R to reboot, Ctrl+T for shell.")
+            -- Halt - wait for user action
+            while true do
+                local ev = {os.pullEvent()}
+                if ev[1] == "key" and ev[2] == keys.leftCtrl then
+                    -- Will be combined with 'r' or 't' - just continue
+                end
+                os.sleep(0)
             end
-            os.sleep(0)
         end
+        return true
+    else
+        -- Script-based kernel (e.g. craftos-shim.lua) - already ran.
+        if term.isColor() then term.setTextColor(colors.gray) end
+        print("[BOOT] Kernel script completed.")
+        return true
     end
-    return true
 end
 
 function Bootloader.run()
@@ -295,23 +301,37 @@ function Bootloader.run()
         end
     end
 
-    -- Determine which entry to boot.
-    -- Always show the GRUB-like menu when there are multiple entries
-    -- (archos + craftos), so the user can pick.
-    local entries = Bootloader.listEntries()
-    local entryCount = 0
-    for _ in pairs(entries) do entryCount = entryCount + 1 end
+    -- Main boot loop. After a kernel exits (user typed 'exit' in
+    -- CraftOS, or ArchOS crashed), we return to the boot menu
+    -- instead of hanging. The user can pick another entry or reboot.
+    while true do
+        -- Determine which entry to boot.
+        -- Always show the GRUB-like menu when there are multiple entries
+        -- (archos + craftos), so the user can pick.
+        local entries = Bootloader.listEntries()
+        local entryCount = 0
+        for _ in pairs(entries) do entryCount = entryCount + 1 end
 
-    local selected
-    if entryCount > 1 then
-        selected = Bootloader.showMenu(entries)
-    else
-        selected = Bootloader.getDefault()
-        if term.isColor() then term.setTextColor(colors.gray) end
-        print("[BOOT] Default entry: " .. selected)
+        local selected
+        if entryCount > 1 then
+            selected = Bootloader.showMenu(entries)
+        else
+            selected = Bootloader.getDefault()
+            if term.isColor() then term.setTextColor(colors.gray) end
+            print("[BOOT] Default entry: " .. selected)
+        end
+
+        Bootloader.bootEntry(selected)
+
+        -- After kernel exits, show a short message and return to menu.
+        term.setBackgroundColor(colors.black)
+        if term.isColor() then term.setTextColor(colors.yellow) end
+        print("")
+        print("[BOOT] Kernel exited. Returning to boot menu in 2 seconds...")
+        print("       (Press Ctrl+R to reboot, Ctrl+S to shut down)")
+        if term.isColor() then term.setTextColor(colors.white) end
+        os.sleep(2)
     end
-
-    Bootloader.bootEntry(selected)
 end
 
 return Bootloader
