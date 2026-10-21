@@ -216,18 +216,48 @@ local function cmd_install()
     print("  Current: v" .. curVer)
     print("  Available: v" .. info.version)
     print("")
-    printWarn("Files to update (" .. #info.files .. "):")
-    for _, f in ipairs(info.files) do
-        print("  - " .. f)
-    end
+
+    -- Disk space check
+    local freeSpace = fs.getFreeSpace("/")
+    print("  Free disk space: " .. tostring(freeSpace) .. " bytes")
+    -- Rough estimate of update size
+    local estSize = #info.files * 30000  -- 30KB per file
+    print("  Estimated update size: ~" .. estSize .. " bytes")
     print("")
-    -- Ask about backup
-    term.setTextColor(colors.yellow)
-    term.write("Create backup before updating? [Y/n] ")
-    term.setTextColor(colors.white)
-    local answer = read()
-    answer = (answer or ""):lower()
-    if answer ~= "n" and answer ~= "no" then
+
+    -- Ask about backup (skip if low disk space)
+    local doBackup = false
+    if freeSpace and freeSpace < estSize * 3 then
+        -- Not enough space for backup + update
+        printWarn("  Low disk space - skipping backup option.")
+        printWarn("  Save important files manually if needed.")
+        print("")
+    else
+        term.setTextColor(colors.yellow)
+        term.write("Create backup before updating? [Y/n] ")
+        term.setTextColor(colors.white)
+        local answer = read()
+        answer = (answer or ""):lower()
+        doBackup = (answer ~= "n" and answer ~= "no")
+    end
+
+    if doBackup then
+        -- Clean up old backups (keep only the most recent)
+        if fs.exists("/backup") and fs.isDir("/backup") then
+            local backups = {}
+            for _, name in ipairs(fs.list("/backup")) do
+                if name:match("^archos%-") then
+                    table.insert(backups, name)
+                end
+            end
+            if #backups > 1 then
+                table.sort(backups)
+                printInfo("Removing " .. (#backups - 1) .. " old backup(s) ...")
+                for i = 1, #backups - 1 do
+                    fs.delete("/backup/" .. backups[i])
+                end
+            end
+        end
         -- Create backup directory with timestamp
         local ts = tostring(os.epoch and os.epoch("utc") or os.time())
         local backupDir = "/backup/archos-" .. ts

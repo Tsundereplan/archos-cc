@@ -179,10 +179,25 @@ function BIOS.scanPeripherals()
             log("Peripheral: " .. side .. " = " .. ptype)
 
             if ptype == "drive" then
-                local hasDisk = peripheral.call(side, "hasDisk")
-                local label = hasDisk and peripheral.call(side, "getDiskLabel") or nil
-                local id    = hasDisk and peripheral.call(side, "getDiskID") or nil
-                BIOS.hw.drives[side] = { side=side, hasDisk=hasDisk, label=label, id=id }
+                -- Wrap the drive peripheral so we can call its methods
+                -- directly. peripheral.call(side, "hasDisk") works in
+                -- newer CC:T versions, but wrap+call is more universal.
+                local drive = peripheral.wrap(side)
+                local hasDisk = false
+                local label = nil
+                local id = nil
+                if drive then
+                    -- Use pcall in case the method doesn't exist
+                    local ok1, res1 = pcall(function() return drive.hasDisk() end)
+                    if ok1 then hasDisk = res1 == true end
+                    if hasDisk then
+                        local ok2, res2 = pcall(function() return drive.getDiskLabel() end)
+                        if ok2 then label = res2 end
+                        local ok3, res3 = pcall(function() return drive.getDiskID() end)
+                        if ok3 then id = res3 end
+                    end
+                end
+                BIOS.hw.drives[side] = { side=side, hasDisk=hasDisk, label=label, id=id, wrap=drive }
             elseif ptype == "monitor" then
                 BIOS.hw.monitors[side] = peripheral.wrap(side)
             elseif ptype == "modem" then

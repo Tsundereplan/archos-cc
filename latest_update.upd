@@ -1,17 +1,17 @@
 [version]
-1.2.1
+1.2.2
 [date]
 2026-10-21
 [whatsnew]
-- Fixed screen flickering (scheduler no longer uses 50ms timer)
-- Fixed shell prompt duplication when typing (cursor pos saved before prompt)
-- Added `help` command (and `commands` alias) - shows list of all commands
-- Added bin/help.lua as standalone command
+- Fixed BIOS crash when disk drive is attached (use peripheral.wrap + pcall)
+- Update installer now checks disk space before downloading
+- Updater cleans up /tmp/update.pending on failure (no more boot loop)
+- Old backups are auto-removed (keep only the most recent)
+- 'update install' shows disk space estimate before proceeding
 [/whatsnew]
 [files]
-kernel/scheduler.lua
-bin/sh.lua
-bin/help.lua
-installer.lua
+bios/bios.lua
+sbin/updater.lua
+bin/update.lua
 latest_update.upd
 [/files]

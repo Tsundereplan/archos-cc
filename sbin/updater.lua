@@ -120,9 +120,48 @@ local function main()
     setColor(colors.white)
     print("")
 
+    -- Pre-flight: check disk space before downloading anything.
+    -- CC:Tweaked computers have ~1MB total. We don't want to download
+    -- 5 files and crash on the 3rd because the disk filled up.
+    local freeSpace = fs.getFreeSpace("/")
+    setColor(colors.gray)
+    print("  Free disk space: " .. tostring(freeSpace) .. " bytes")
+    -- Rough estimate: each file is ~5-20KB. Be conservative.
+    local estimatedNeed = #files * 30000  -- 30KB per file worst case
+    if freeSpace and freeSpace < estimatedNeed then
+        setColor(colors.red)
+        print("")
+        print("  [!] LOW DISK SPACE")
+        print("  Need ~" .. estimatedNeed .. " bytes for " .. #files .. " files")
+        print("  Have only " .. freeSpace .. " bytes free")
+        print("")
+        setColor(colors.yellow)
+        print("  Suggestions to free space:")
+        print("    fs.delete('/backup')          -- remove old backups")
+        print("    fs.delete('/startup.lua.bak') -- remove old startup backup")
+        print("    fs.delete('/installer.lua')   -- remove installer")
+        print("    fs.delete('/var/cache/pacman')-- remove package cache")
+        print("")
+        setColor(colors.white)
+        print("  After freeing space, run 'update install' again.")
+        print("")
+        -- Remove the pending file so we don't loop on every boot
+        fs.delete("/tmp/update.pending")
+        print("[updater] Update aborted due to low disk space.")
+        print("  Booting normally in 5 seconds...")
+        os.sleep(5)
+        return 1
+    end
+    setColor(colors.green)
+    print("  Disk space OK")
+    setColor(colors.white)
+    print("")
+
     -- Download each file
     local ok, fail = 0, 0
+    local abort = false
     for i, rel in ipairs(files) do
+        if abort then break end
         setColor(colors.cyan)
         local counter = string.format("[%d/%d]", i, #files)
         print("  " .. counter .. " " .. rel)
@@ -130,15 +169,30 @@ local function main()
         term.write("    > downloading ")
         local body = fetchURL(repoURL .. rel)
         if body then
-            local wok, werr = writeFile("/" .. rel, body)
-            if wok then
-                setColor(colors.green)
-                print(" OK (" .. #body .. " B)")
-                ok = ok + 1
-            else
+            -- Check if we have enough space for this specific file
+            local fileSpace = #body + 100  -- small overhead
+            local currentFree = fs.getFreeSpace("/" .. fs.getDir(rel) or "/")
+            if currentFree and currentFree < fileSpace then
                 setColor(colors.red)
-                print(" FAIL: " .. tostring(werr))
+                print(" FAIL: out of disk space")
+                print("    need " .. fileSpace .. " bytes, have " .. currentFree)
                 fail = fail + 1
+                abort = true  -- stop the whole update; can't continue
+            else
+                local wok, werr = writeFile("/" .. rel, body)
+                if wok then
+                    setColor(colors.green)
+                    print(" OK (" .. #body .. " B)")
+                    ok = ok + 1
+                else
+                    setColor(colors.red)
+                    print(" FAIL: " .. tostring(werr))
+                    fail = fail + 1
+                    -- If it's "out of space", abort
+                    if werr and tostring(werr):lower():find("space") then
+                        abort = true
+                    end
+                end
             end
         else
             setColor(colors.red)
@@ -147,6 +201,25 @@ local function main()
         end
         setColor(colors.white)
         os.sleep(0)
+    end
+
+    -- If we aborted mid-way, clean up and bail
+    if abort then
+        print("")
+        setColor(colors.red)
+        print("[updater] Update aborted - out of disk space.")
+        print("  " .. ok .. " files updated, " .. fail .. " failed.")
+        print("")
+        setColor(colors.yellow)
+        print("  Free space and run 'update install' again.")
+        print("  See suggestions above.")
+        print("")
+        -- Remove the pending file so we don't loop on every boot
+        fs.delete("/tmp/update.pending")
+        setColor(colors.white)
+        print("[updater] Booting normally in 5 seconds...")
+        os.sleep(5)
+        return 1
     end
 
     print("")

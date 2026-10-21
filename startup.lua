@@ -66,7 +66,12 @@ if fs.exists("/tmp/update.pending") then
             setColor(colors.red)
             print("[startup] Updater crashed: " .. tostring(uErr))
             print("")
+            -- Remove the pending file so we don't loop forever.
+            -- The user can fix the issue (e.g. free disk space)
+            -- and run 'update install' again.
+            fs.delete("/tmp/update.pending")
             setColor(colors.yellow)
+            print("  Removed /tmp/update.pending to avoid boot loop.")
             print("  Falling back to normal boot in 5 seconds...")
             os.sleep(5)
         end
