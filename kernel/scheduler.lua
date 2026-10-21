@@ -210,20 +210,19 @@ function Scheduler.main(initFn)
     end
 
     -- Main loop
+    -- IMPORTANT: do NOT use os.startTimer here. A 50ms timer causes the
+    -- whole screen to flicker because every timer event triggers a
+    -- redraw in waiting processes (especially the shell prompt).
+    -- os.pullEventRaw() blocks until ANY event arrives (key, char, mouse,
+    -- timer, http, etc.) - which is exactly what we want. We only tick
+    -- when there's actually something to do.
     while running do
         tick()
 
-        -- Pull next event with a small timeout so the loop ticks even
-        -- when no events are pending.
-        -- CC:Tweaked: os.pullEventRaw() blocks until an event arrives.
-        -- We use os.startTimer to ensure periodic wake-ups.
-        local tickTimer = os.startTimer(0.05)
+        -- Block until ANY event arrives (no busy-loop, no flicker).
         local event = { os.pullEventRaw() }
-        -- Cancel the timer if it's still alive (already fired -> it's the timer event)
-        if event[1] ~= "timer" or event[2] ~= tickTimer then
-            -- Some other event arrived; dispatch it
-            dispatchEvent(event)
-        end
+        -- Dispatch the event to all matching waiting processes.
+        dispatchEvent(event)
 
         -- Check if init died
         local initProc = Process.get(1)

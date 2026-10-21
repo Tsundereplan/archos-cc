@@ -96,7 +96,26 @@ if not ok then
     print("[FATAL] Bootloader crashed: " .. tostring(err))
     print("")
     setColor(colors.yellow)
-    print("  Falling back to CraftOS shell in 5 seconds...")
+    print("  Falling back to vanilla CraftOS shell in 5 seconds...")
+    print("  Press Ctrl+T to terminate, Ctrl+R to reboot.")
     os.sleep(5)
-    -- Don't reboot - let user inspect the shell
+    -- Actively launch the vanilla CraftOS shell so the user has a
+    -- working terminal to inspect / fix things from.
+    -- Try /rom/programs/shell.lua first (standard CC:T path).
+    local shellPath = "/rom/programs/shell.lua"
+    if not fs.exists(shellPath) then
+        shellPath = "/rom/programs/shell"
+    end
+    if fs.exists(shellPath) then
+        setColor(colors.white)
+        print("")
+        print("[startup] Launching " .. shellPath .. " ...")
+        print("")
+        os.run(_G, shellPath)
+    else
+        setColor(colors.red)
+        print("[startup] Could not find " .. shellPath)
+        print("  Type os.reboot() to restart, os.shutdown() to power off.")
+        setColor(colors.white)
+    end
 end

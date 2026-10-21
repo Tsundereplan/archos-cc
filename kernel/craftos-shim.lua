@@ -78,8 +78,20 @@ if not fs.exists(shellPath) then
 end
 
 -- Run the native CraftOS shell.
--- os.run uses the global environment, so the shell will see _G as expected.
-local ok, err = os.run({}, shellPath)
+-- IMPORTANT: os.run(env, path) takes a NEW environment for the script.
+-- If we pass {}, the shell sees an empty global table and crashes
+-- immediately (no print, no fs, no term, etc.).
+-- We must pass _G so the shell sees all standard CraftOS APIs.
+-- Even better: use shell.run() if available (the global shell API),
+-- which uses the current environment automatically.
+local ok, err
+if _G.shell and _G.shell.run then
+    -- We're already inside a shell - just run the new shell in place
+    ok, err = pcall(_G.shell.run, shellPath)
+else
+    -- Fresh environment = our current _G (so all globals are visible)
+    ok, err = os.run(_G, shellPath)
+end
 
 if not ok then
     if term.isColor() then term.setTextColor(colors.red) end

@@ -155,6 +155,7 @@ local MANIFEST = {
     "bin/ps.lua", "bin/kill.lua", "bin/env.lua",
     "bin/free.lua", "bin/df.lua", "bin/tree.lua", "bin/find.lua",
     "bin/update.lua",  -- new: replaces arch-update.lua
+    "bin/help.lua",  -- new: command reference
     -- sbin
     "sbin/init.lua", "sbin/fsck.lua", "sbin/mkfs.lua",
     "sbin/mkuser.lua", "sbin/networkd.lua", "sbin/mountd.lua",

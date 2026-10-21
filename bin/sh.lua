@@ -114,6 +114,60 @@ function builtins.history(args)
     return 0
 end
 
+function builtins.help(args)
+    -- Show list of available commands
+    print("ArchOS-CC - Available commands:")
+    print("")
+    print("Shell builtins:")
+    print("  cd [DIR]            Change directory")
+    print("  pwd                 Print working directory")
+    print("  echo TEXT           Print text")
+    print("  export VAR=val      Set environment variable")
+    print("  alias NAME=CMD     Define alias")
+    print("  history             Show command history")
+    print("  source FILE         Execute file in current shell")
+    print("  exit                Exit the shell")
+    print("  help                Show this help")
+    print("")
+    print("File operations:")
+    print("  ls, cat, cp, mv, rm, mkdir, touch, tree, find, head, tail, wc")
+    print("  chmod, chown, grep, which")
+    print("")
+    print("User management:")
+    print("  useradd, userdel, passwd, su, sudo, whoami")
+    print("")
+    print("System info:")
+    print("  uname, hostname, date, dmesg, ps, top, neofetch, env")
+    print("  free, df, clear, reboot, poweroff")
+    print("")
+    print("Filesystem:")
+    print("  mount, umount")
+    print("")
+    print("Network:")
+    print("  ifconfig, ping, wget, pastebin, git, pinestore")
+    print("")
+    print("Package & service management:")
+    print("  update check|install|ver|wn|repo <url>")
+    print("  pacman -S|-R|-Q|-Ss|-Syu <pkg>")
+    print("  systemctl start|stop|status|enable <name>")
+    print("")
+    print("GUI applications (in /usr/bin):")
+    print("  editor, browser, gbrowse, lua-repl, sysmgr, settings")
+    print("  top, neofetch, taskmgr, calculator, notes, paint")
+    print("  player, monitor-app, redstone-panel")
+    print("")
+    print("Desktop environments:")
+    print("  Edit /etc/default-de and put: tty, gnome, plasma, or xfce")
+    print("  Then reboot.")
+    print("")
+    print("For command-specific help, run: <command> --help")
+    return 0
+end
+
+function builtins.commands(args)
+    return builtins.help(args)
+end
+
 function builtins.source(args)
     local file = args[1]
     if not file or not fs.exists(file) then
@@ -468,9 +522,12 @@ end
 
 -- Read a line with history support
 function Shell.readLineWithHistory(prompt)
+    -- Save cursor position BEFORE writing the prompt, so redraw()
+    -- knows where the prompt's left edge is. (If we save after, the
+    -- prompt gets duplicated on every redraw.)
+    local startX, startY = term.getCursorPos()
     term.write(prompt)
     local line = ""
-    local startX, startY = term.getCursorPos()
     local function redraw()
         term.setCursorPos(startX, startY)
         term.clearLine()

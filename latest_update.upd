@@ -1,27 +1,17 @@
 [version]
-1.1.2
+1.2.1
 [date]
-2026-10-20
+2026-10-21
 [whatsnew]
-- Fixed kernel scheduler not seeing spawned processes (module caching in _G)
-- Fixed Process.wait() to properly yield to scheduler
-- Defensive colors in BIOS (wrapped in pcall for compatibility)
-- GRUB-like interactive boot menu with arrow key navigation
-- Removed F2 (didn't work in CC:T); only F12 for boot menu now
-- New `update` command (replaces arch-update) with check/install/ver/wn/repo subcommands
-- Installer defaults to Tsundereplan/archos-cc (no args needed)
-- Password confirmation in installer (asks twice, retries if mismatch)
-- Optional user account creation during install (added to wheel group)
+- Fixed screen flickering (scheduler no longer uses 50ms timer)
+- Fixed shell prompt duplication when typing (cursor pos saved before prompt)
+- Added `help` command (and `commands` alias) - shows list of all commands
+- Added bin/help.lua as standalone command
 [/whatsnew]
 [files]
-installer.lua
-bios/bios.lua
-bootloader/bootloader.lua
-kernel/init.lua
-kernel/process.lua
 kernel/scheduler.lua
-kernel/syscall.lua
-kernel/events.lua
-bin/update.lua
-bin/login.lua
+bin/sh.lua
+bin/help.lua
+installer.lua
+latest_update.upd
 [/files]

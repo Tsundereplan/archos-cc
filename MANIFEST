@@ -19,6 +19,7 @@ bin/free.lua
 bin/git.lua
 bin/grep.lua
 bin/head.lua
+bin/help.lua
 bin/hostname.lua
 bin/ifconfig.lua
 bin/kill.lua
