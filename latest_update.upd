@@ -1,45 +1,26 @@
 [version]
-1.5.0
+1.5.1
 [date]
 2026-10-21
 [whatsnew]
-SECURITY FIX: Login no longer auto-accepts empty password
-  - checkPassword() now returns false for empty hash (was returning true!)
-  - login.lua forces password setup on first boot if root has no password
-  - Can no longer log in as root without authentication
-NEW: Full window manager with colored borders
-  - Each window gets a unique border color (8 colors cycle)
-  - Title bar with [_] minimize  [maximize]  [X] close buttons
-  - Click title bar to drag and move window
-  - Drag bottom-right corner (>) to resize window
-  - Click window to bring to front (z-order)
-NEW: Taskbar at bottom of screen
-  - Shows minimized windows as clickable buttons
-  - Click a minimized window button to restore it
-  - Shows count of open windows
-NEW: Printer support (usr/bin/print.lua)
-  - Print text files to attached Printer block
-  - 'print <file>' to print
-  - 'print --list' to see printers
-  - 'print --status' for paper/ink levels
-  - 'print <file> --title "Title"' for titled pages
-  - Auto-paginates long files
-IMPROVED: Mouse interactions
-  - All window operations are mouse-driven (no keyboard needed)
-  - Click icons to launch, click windows to focus
-  - Click taskbar to restore minimized apps
-  - Drag title bar to move, drag corner to resize
-FIX: Top menu bar menus now open reliably
-  - Click "ArchOS" / "Apps" / "System" to open dropdown
-  - Click a menu item to execute
-  - Click elsewhere to close
+- FIXED: GUI now launches FIRST, no text login!
+  - Built-in graphical login screen (no text mode at all)
+  - Login window with User/Pass fields, Tab to switch, Enter to login
+  - Desktop appears immediately after successful login
+- FIXED: Window borders now VISIBLE!
+  - window.create() uses inner coords (offset by border)
+  - Chrome (borders, title bar, buttons) drawn ON TOP of content
+  - Each window has unique colored border (8 colors cycle)
+- FIXED: Keyboard events (Enter, etc.) now delivered to windows!
+  - Key/char/paste events go to active window via resumeKey()
+  - Apps inside windows can now receive Enter, Backspace, etc.
+  - Terminal, editor, and other apps now work properly in windows
+- IMPROVED: Mouse events properly translated to window coordinates
+  - resumeMouse() converts screen coords to window-relative
+  - Clicks only delivered if inside inner content area
+  - Mouse scroll/up/drag all handled
 [/whatsnew]
 [files]
 de/gui.lua
-bin/login.lua
-lib/users.lua
-usr/bin/print.lua
-etc/apps.conf
-installer.lua
 latest_update.upd
 [/files]
