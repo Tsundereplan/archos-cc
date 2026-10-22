@@ -634,6 +634,24 @@ local function main()
             else
                 handleAction(c)
             end
+        elseif ev == "mouse_click" then
+            local btn, mx, my = event[2], event[3], event[4]
+            -- Click on tab bar (y == 2)
+            if my == 2 then
+                -- Each tab is ~15 chars wide
+                local tabIdx = math.ceil(mx / 15)
+                if tabIdx >= 1 and tabIdx <= #state.tabs then
+                    state.tab = tabIdx
+                    state.selected = 1
+                    refreshTab()
+                end
+            elseif my > 3 then
+                -- Click on list = select item
+                local row = my - 3
+                if row >= 1 and row <= listSize() then
+                    state.selected = row
+                end
+            end
         end
     end
 

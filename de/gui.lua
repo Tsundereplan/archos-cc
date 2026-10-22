@@ -158,7 +158,14 @@ function Window:_resume(event)
         self.alive = false
         return
     end
-    local oldRedirect = term.redirect(self.window)
+    -- If redirected to a monitor, redirect term there
+    -- Otherwise, redirect to the window object
+    local oldRedirect
+    if self.monitor then
+        oldRedirect = term.redirect(self.monitor.wrap)
+    else
+        oldRedirect = term.redirect(self.window)
+    end
     if event then
         coroutine.resume(self.coro, unpack(event))
     else
@@ -170,13 +177,16 @@ function Window:_resume(event)
     end
 end
 
--- Resume with a mouse event, translating to inner window coords
+-- Resume with a mouse event, translating to inner window coords.
+-- The CC:T window object is created at (self.x+1, self.y+1), so:
+--   relX = sx - (self.x+1) + 1 = sx - self.x
+--   relY = sy - (self.y+1) + 1 = sy - self.y
+-- (NO extra -1! That was the bug causing all mouse clicks to be off by 1.)
 function Window:resumeMouse(eventType, btn, x, y)
     if not self.alive then return end
-    -- Translate to inner window coordinates
-    local relX = x - self.x  -- -1 for left border → 0-based → +1 for inner
-    local relY = y - self.y - 1  -- -1 for title bar
-    -- Clamp check: only deliver if inside inner area
+    local relX = x - self.x
+    local relY = y - self.y
+    -- Clamp: only deliver if inside inner content area
     if relX < 1 or relX > self.width - 2 then return end
     if relY < 1 or relY > self.height - 2 then return end
     self:_resume({eventType, btn, relX, relY})
@@ -446,6 +456,8 @@ local state = {
     clock = "00:00",
     running = true,
     dragging = nil,
+    contextMenu = nil,
+    lastIconClick = nil,  -- for double-click detection
 }
 
 -- ============================================================
@@ -540,14 +552,52 @@ local function drawMenu()
         }
     elseif state.menuOpen == "apps" then
         menuX = 9
+        -- Categorize apps
+        local categories = {
+            {name = "--- System ---", apps = {}},
+            {name = "--- Apps ---", apps = {}},
+            {name = "--- Games ---", apps = {}},
+            {name = "--- Utils ---", apps = {}},
+        }
         for _, app in ipairs(state.apps) do
-            table.insert(items, {app.name, function()
-                local offset = #state.windows * 2
-                local win = Window.new(app, 5 + offset, 4 + offset)
-                win:start()
-                table.insert(state.windows, win)
-                state.activeWindow = win
-            end})
+            local lower = app.name:lower()
+            -- Skip terminal-only commands (they're in /bin, meant for shell)
+            local isTerminalCmd = lower:match("update") or lower:match("print") or
+                lower:match("cleanup") or lower:match("internet") or
+                lower:match("install") or lower:match("help") or
+                lower:match("mount") or lower:match("hostname") or
+                lower:match("pinestore") or lower:match("pacman")
+            if not isTerminalCmd then
+                if lower:match("terminal") or lower:match("files") or
+                   lower:match("editor") or lower:match("settings") or
+                   lower:match("system") or lower:match("task") or
+                   lower:match("monitor") then
+                    table.insert(categories[1].apps, app)
+                elseif lower:match("paint") or lower:match("notes") or
+                       lower:match("calc") or lower:match("clock") or
+                       lower:match("music") or lower:match("player") or
+                       lower:match("web") or lower:match("browser") or
+                       lower:match("repl") then
+                    table.insert(categories[2].apps, app)
+                else
+                    table.insert(categories[4].apps, app)
+                end
+            end
+        end
+        -- Build menu items with category headers
+        for _, cat in ipairs(categories) do
+            if #cat.apps > 0 then
+                table.insert(items, {cat.name, nil})  -- header (nil = not clickable)
+                for _, app in ipairs(cat.apps) do
+                    table.insert(items, {"  " .. app.name, function()
+                        local offset = #state.windows * 2
+                        local win = Window.new(app, 5 + offset, 4 + offset)
+                        win:start()
+                        table.insert(state.windows, win)
+                        state.activeWindow = win
+                    end})
+                end
+            end
         end
     elseif state.menuOpen == "system" then
         menuX = 14
@@ -580,17 +630,67 @@ local function drawMenu()
     end
     local mw = 25
     local mh = #items + 2
+    local _, screenH = term.getSize()
+    -- If menu is too tall, split into multiple columns
+    if mh > screenH - 2 then
+        mh = screenH - 2
+    end
     box(menuX, 2, mw, mh, colors.lightGray)
     writeAt(menuX+1, 2, " "..state.menuOpen.." ", colors.lightGray, colors.black)
-    for i, item in ipairs(items) do
-        local label = item[1]
+    local maxRows = mh - 2
+    for i = 1, math.min(#items, maxRows) do
+        local item = items[i]
+        local label = item[1] or "?"
         if #label > mw-3 then label = label:sub(1, mw-3) end
-        writeAt(menuX+1, 2+i, " "..label..string.rep(" ", mw-#label-3), colors.lightGray, colors.black)
+        -- Header items (nil action) are shown in yellow
+        if item[2] == nil then
+            writeAt(menuX+1, 2+i, " "..label..string.rep(" ", mw-#label-3), colors.lightGray, colors.yellow)
+        else
+            writeAt(menuX+1, 2+i, " "..label..string.rep(" ", mw-#label-3), colors.lightGray, colors.black)
+        end
+    end
+    -- If there are more items than fit, draw a second column
+    if #items > maxRows then
+        local col2X = menuX + mw
+        local col2H = #items - maxRows + 2
+        box(col2X, 2, mw, col2H, colors.lightGray)
+        for i = maxRows+1, #items do
+            local item = items[i]
+            local label = item[1] or "?"
+            if #label > mw-3 then label = label:sub(1, mw-3) end
+            if item[2] == nil then
+                writeAt(col2X+1, 2+(i-maxRows), " "..label..string.rep(" ", mw-#label-3), colors.lightGray, colors.yellow)
+            else
+                writeAt(col2X+1, 2+(i-maxRows), " "..label..string.rep(" ", mw-#label-3), colors.lightGray, colors.black)
+            end
+        end
     end
     reset()
     state.menuItems = items
     state.menuX = menuX
     state.menuW = mw
+    state.menuCol2X = #items > maxRows and (menuX + mw) or nil
+    state.menuMaxRows = maxRows
+end
+
+local function drawContextMenu()
+    if not state.contextMenu then return end
+    local cm = state.contextMenu
+    local w, h = term.getSize()
+    local mw = 22
+    local mh = #cm.items + 2
+    local mx = math.min(cm.x, w - mw)
+    local my = math.min(cm.y, h - mh)
+    -- Shadow
+    box(mx+1, my+1, mw, mh, colors.gray)
+    -- Menu
+    box(mx, my, mw, mh, colors.lightGray)
+    for i, item in ipairs(cm.items) do
+        local label = item[1]
+        if #label > mw - 3 then label = label:sub(1, mw - 3) end
+        writeAt(mx+1, my+i, " " .. label .. string.rep(" ", mw - #label - 3), colors.lightGray, colors.black)
+    end
+    reset()
 end
 
 local function render()
@@ -606,6 +706,7 @@ local function render()
     drawTaskbar()
     if state.menuOpen then drawMenu() end
     if state.runDialogOpen then drawRunDialog() end
+    if state.contextMenu then drawContextMenu() end
 end
 
 -- ============================================================
@@ -733,6 +834,24 @@ local function main()
                 local btn, x, y = event[2], event[3], event[4]
                 local w, h = term.getSize()
 
+                -- Context menu open: check if click is on a menu item
+                if state.contextMenu then
+                    local cm = state.contextMenu
+                    local mw = 22
+                    local mh = #cm.items + 2
+                    local mx = math.min(cm.x, w - mw)
+                    local my = math.min(cm.y, h - mh)
+                    if x >= mx and x < mx + mw and y > my and y <= my + #cm.items then
+                        local item = cm.items[y - my]
+                        if item then
+                            item[2]()  -- execute action
+                        end
+                    end
+                    -- Close context menu regardless
+                    state.contextMenu = nil
+                    return
+                end
+
                 -- Menu bar
                 if y == 1 then
                     if x >= 2 and x <= 7 then
@@ -749,13 +868,34 @@ local function main()
 
                 -- Menu item click
                 if state.menuOpen and state.menuItems then
-                    if x >= state.menuX and x < state.menuX + state.menuW
-                       and y > 2 and y <= 2 + #state.menuItems then
+                    local maxRows = state.menuMaxRows or #state.menuItems
+                    local mw = state.menuW or 25
+                    local menuX = state.menuX or 1
+                    -- Column 1
+                    if x >= menuX and x < menuX + mw
+                       and y > 2 and y <= 2 + math.min(#state.menuItems, maxRows) then
                         local item = state.menuItems[y - 2]
-                        if item then
+                        if item and item[2] then
                             state.menuOpen = nil
                             state.menuItems = nil
                             item[2]()
+                        else
+                            -- Header item or out of range - just close menu
+                            state.menuOpen = nil
+                            state.menuItems = nil
+                        end
+                    -- Column 2 (if exists)
+                    elseif state.menuCol2X and x >= state.menuCol2X and x < state.menuCol2X + mw
+                       and y > 2 then
+                        local col2Idx = (y - 2) + maxRows
+                        local item = state.menuItems[col2Idx]
+                        if item and item[2] then
+                            state.menuOpen = nil
+                            state.menuItems = nil
+                            item[2]()
+                        else
+                            state.menuOpen = nil
+                            state.menuItems = nil
                         end
                     else
                         state.menuOpen = nil
@@ -782,6 +922,85 @@ local function main()
                     return
                 end
 
+                -- RIGHT-CLICK (button 2) on a window → context menu
+                if btn == 2 then
+                    for i = #state.windows, 1, -1 do
+                        local win = state.windows[i]
+                        if not win.minimized and win:contains(x, y) then
+                            -- Show context menu for this window
+                            state.contextMenu = {
+                                window = win,
+                                x = x, y = y,
+                                items = {
+                                    {"Move to Monitor", function()
+                                        local monitors = findMonitors()
+                                        if #monitors == 0 then
+                                            -- No monitors - show message
+                                            state.contextMenu = {
+                                                x = 5, y = 5,
+                                                items = {
+                                                    {"(no monitors attached)", function() end},
+                                                }
+                                            }
+                                            return
+                                        end
+                                        -- Build submenu items for each monitor
+                                        local items = {}
+                                        for i, mon in ipairs(monitors) do
+                                            local w, h = mon.wrap.getSize()
+                                            items[#items+1] = {
+                                                "Send to " .. mon.side .. " ("..w.."x"..h..")",
+                                                function()
+                                                    win.monitor = mon
+                                                    mon.wrap.setBackgroundColor(colors.black)
+                                                    mon.wrap.setTextColor(colors.white)
+                                                    mon.wrap.clear()
+                                                    mon.wrap.setCursorPos(1, 1)
+                                                    -- Resume app on the monitor
+                                                    win:_resume()
+                                                end
+                                            }
+                                        end
+                                        items[#items+1] = {"Back to main screen", function()
+                                            win.monitor = nil
+                                            win:_resume()
+                                        end}
+                                        state.contextMenu = {
+                                            x = 5, y = 5,
+                                            items = items,
+                                        }
+                                    end},
+                                    {"Minimize", function()
+                                        win:minimize()
+                                        state.activeWindow = nil
+                                    end},
+                                    {"Maximize/Restore", function()
+                                        win:toggleMaximize()
+                                    end},
+                                    {"Close", function()
+                                        win.alive = false
+                                        if win.window and win.window.setVisible then
+                                            win.window.setVisible(false)
+                                        end
+                                        for j = #state.windows, 1, -1 do
+                                            if state.windows[j] == win then
+                                                table.remove(state.windows, j)
+                                                break
+                                            end
+                                        end
+                                        if state.activeWindow == win then
+                                            state.activeWindow = nil
+                                        end
+                                    end},
+                                }
+                            }
+                            return
+                        end
+                    end
+                    return
+                end
+
+                -- LEFT-CLICK (button 1) on a window
                 -- Check windows (front to back)
                 for i = #state.windows, 1, -1 do
                     local win = state.windows[i]
@@ -792,7 +1011,21 @@ local function main()
                         state.activeWindow = win
 
                         if win:onCloseButton(x, y) then
-                            win:close()
+                            -- Close: remove window IMMEDIATELY
+                            win.alive = false
+                            if win.window and win.window.setVisible then
+                                win.window.setVisible(false)
+                            end
+                            -- Remove from list
+                            for j = #state.windows, 1, -1 do
+                                if state.windows[j] == win then
+                                    table.remove(state.windows, j)
+                                    break
+                                end
+                            end
+                            if state.activeWindow == win then
+                                state.activeWindow = state.windows[#state.windows] or nil
+                            end
                         elseif win:onMinButton(x, y) then
                             win:minimize()
                             state.activeWindow = nil
@@ -810,16 +1043,26 @@ local function main()
                     end
                 end
 
-                -- Desktop icon click
+                -- Desktop icon: DOUBLE-CLICK to open (single click = select)
                 for i, app in ipairs(state.apps) do
                     local ix = 2
                     local iy = 3 + (i-1)*4
                     if x >= ix and x <= ix+3 and y >= iy and y <= iy+2 then
-                        local offset = #state.windows * 2
-                        local win = Window.new(app, 5+offset, 4+offset)
-                        win:start()
-                        table.insert(state.windows, win)
-                        state.activeWindow = win
+                        -- Check for double-click
+                        local now = os.clock()
+                        if state.lastIconClick and state.lastIconClick.idx == i
+                           and (now - state.lastIconClick.time) < 0.5 then
+                            -- Double-click: launch app
+                            local offset = #state.windows * 2
+                            local win = Window.new(app, 5+offset, 4+offset)
+                            win:start()
+                            table.insert(state.windows, win)
+                            state.activeWindow = win
+                            state.lastIconClick = nil
+                        else
+                            -- Single click: select icon (just remember)
+                            state.lastIconClick = {idx=i, time=now}
+                        end
                         return
                     end
                 end
@@ -841,9 +1084,11 @@ local function main()
                 if state.dragging then
                     state.dragging = nil
                 elseif state.activeWindow and state.activeWindow.alive then
-                    local _, _, x, y = unpack(event)
-                    if state.activeWindow:inContent(x, y) then
-                        state.activeWindow:resumeMouse("mouse_up", event[2], x, y)
+                    local upBtn = event[2]
+                    local upX = event[3]
+                    local upY = event[4]
+                    if upX and upY and state.activeWindow:inContent(upX, upY) then
+                        state.activeWindow:resumeMouse("mouse_up", upBtn, upX, upY)
                     end
                 end
                 return
@@ -852,12 +1097,24 @@ local function main()
             -- Mouse scroll → active window
             if event[1] == "mouse_scroll" then
                 if state.activeWindow and state.activeWindow.alive then
-                    local _, _, _, x, y = unpack(event)
-                    if state.activeWindow:inContent(x, y) then
-                        state.activeWindow:resumeMouse("mouse_scroll", event[2], event[3], event[4])
+                    local scrollDir = event[2]
+                    local scrollX = event[3]
+                    local scrollY = event[4]
+                    if scrollX and scrollY and state.activeWindow:inContent(scrollX, scrollY) then
+                        state.activeWindow:resumeMouse("mouse_scroll", scrollDir, scrollX, scrollY)
                     end
                 end
                 return
+            end
+
+            -- CATCH-ALL: deliver any unhandled event to active window.
+            -- This includes: http_success, http_failure, websocket_*,
+            -- peripheral, peripheral_detach, disk, disk_eject, etc.
+            -- Without this, apps that use http.request() (like update,
+            -- pinestore, webbrowser, wget) would hang forever waiting
+            -- for http_success events that the GUI swallowed.
+            if state.activeWindow and state.activeWindow.alive then
+                state.activeWindow:_resume(event)
             end
         end)
 

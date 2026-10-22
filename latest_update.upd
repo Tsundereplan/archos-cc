@@ -3,26 +3,21 @@
 [date]
 2026-10-22
 [whatsnew]
-- FIXED: Bootloader menu rendering (clean, no bugs)
+- Based on v1.6.6 (user's known-good version)
+- FIXED: installer now writes etc/version = 1.7.2 (was 1.1.2)
 - FIXED: CraftOS boot (move startup.lua + reboot, no loop in gettable)
-- NEW: System restore from backup!
-  - Boot menu now has "Restore from Backup" option (entry 3)
-  - New command: restore (bin/restore.lua)
-  - restore --list: shows all backups (local + floppy disk)
-  - restore: interactive restore
-  - restore <path>: restore from specific path
-  - Works with backups from: update install, update backup, update backup disk
-- NEW: Restore option in GRUB boot menu
-  - Select "Restore from Backup" to enter restore mode
-  - Scans /backup/ and /disk/ for backup directories
-  - Shows list, user picks one, system files are restored
-  - Reboots after restore
+- FIXED: startup.lua restore-startup marker (was using boot-craftos-once)
+- NEW: restore command (bin/restore.lua) - restore from backup
+- NEW: "Restore from Backup" option in GRUB boot menu (entry 3)
+- KEEPS all v1.6.6 fixes: mouse Y, mouse_scroll, mouse_up, close button,
+  double-click icons, context menu, http events, terminal in-process
 [/whatsnew]
 [files]
-bootloader/bootloader.lua
+installer.lua
 startup.lua
 kernel/craftos-shim.lua
+bootloader/bootloader.lua
 bin/restore.lua
-installer.lua
+etc/version
 latest_update.upd
 [/files]

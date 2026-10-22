@@ -282,7 +282,7 @@ local function drawStatusBar()
     setBG(colors.black)
     setColor(colors.yellow)
     term.setCursorPos(1, h)
-    local fkeys = "F2:Ren F4:Edit F5:Cp F6:Mv F7:MkD F8:Del Tab:Sw Q:Quit"
+    local fkeys = "2:Ren 4:Edit 5:Cp 6:Mv 7:MkD 8:Del Tab:Sw Q:Quit"
     if #fkeys > w then fkeys = fkeys:sub(1, w) end
     term.write(fkeys)
     resetColors()
@@ -672,12 +672,12 @@ local function main()
                 elseif state.sortMode == "size" then state.sortMode = "date"
                 else state.sortMode = "name" end
                 refresh()
-            elseif key == keys.f2 then renameItem()
-            elseif key == keys.f4 then editItem()
-            elseif key == keys.f5 then copyOrMove("Copy")
-            elseif key == keys.f6 then copyOrMove("Move")
-            elseif key == keys.f7 then makeDir()
-            elseif key == keys.f8 then deleteItem()
+            elseif key == keys.two then renameItem()
+            elseif key == keys.four then editItem()
+            elseif key == keys.five then copyOrMove("Copy")
+            elseif key == keys.six then copyOrMove("Move")
+            elseif key == keys.seven then makeDir()
+            elseif key == keys.eight then deleteItem()
             elseif key == keys.delete then deleteItem()
             elseif key == keys.space then
                 -- mark file (multi-select - future feature)

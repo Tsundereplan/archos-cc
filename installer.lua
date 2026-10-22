@@ -1,10 +1,13 @@
 --[[
-    ArchOS-CC Installer v2.0.0  -  Redesigned
+    ArchOS-CC Installer v2.1.0  -  Redesigned
     ==========================================
     Downloads and installs the ArchOS-CC operating system from GitHub.
 
+    Usage:
+        wget <url>/installer.lua /installer.lua
+        installer <github-user> <repo-name> [branch]
+
     Features:
-      * Self-update: checks repo for newer installer version
       * Compact banner that fits on 51-wide screens
       * Stage-based progress with ASCII boxes
       * Per-file progress bar (visible heartbeat during download)
@@ -12,10 +15,7 @@
       * Optional user account creation
       * Defensive colors (works on color and mono computers)
       * Async HTTP with timeouts (never hangs)
-      * Only downloads files listed in MANIFEST (not entire repo)
 ]]
-
-local INSTALLER_VERSION = "2.0.0"
 
 -- ============================================================
 --  Config
@@ -159,8 +159,8 @@ local MANIFEST = {
     "bin/cleanup.lua",  -- new: free disk space
     "bin/install-to-disk.lua",  -- new: install OS to floppy disk
     "bin/internet.lua",  -- new: internet connection checker
-    "bin/gui-to-monitor.lua",  -- new: GUI on external monitor
-    "bin/restore.lua",  -- new: restore system from backup
+    "bin/gui-to-monitor.lua",
+    "bin/restore.lua",  -- new: restore from backup
     -- sbin
     "sbin/init.lua", "sbin/fsck.lua", "sbin/mkfs.lua",
     "sbin/mkuser.lua", "sbin/networkd.lua", "sbin/mountd.lua",
@@ -177,7 +177,7 @@ local MANIFEST = {
     "usr/bin/monitor-cast.lua",  -- new: cast screen to Monitor block
     "usr/bin/print.lua",  -- new: print files to Printer peripheral
     -- Desktop environments
-    "de/tty.lua", "de/gui.lua",
+    "de/tty.lua", "de/gnome.lua", "de/plasma.lua", "de/xfce.lua", "de/gui.lua",
     -- etc configs
     "etc/passwd", "etc/group", "etc/fstab", "etc/hostname",
     "etc/issue", "etc/network.conf", "etc/os-release",
@@ -690,13 +690,19 @@ local function firstBootPrompt()
     print("    1) gui      Unified GUI desktop (RECOMMENDED)")
     print("               Reads /etc/apps.conf for app list")
     print("    2) tty      Arch TTY (text only, minimal)")
+    print("    3) gnome    GNOME-like (simple GUI, legacy)")
+    print("    4) plasma   KDE Plasma-like (advanced GUI, legacy)")
+    print("    5) xfce     XFCE-like (lightweight GUI, legacy)")
     setFG(C.reset)
     setFG(C.accent)
-    term.write("  choice [1-2, default=1]: ")
+    term.write("  choice [1-5, default=1]: ")
     setFG(C.reset)
     local choice = read()
     local de = "gui"
-    if choice == "2" then de = "tty" end
+    if choice == "2" then de = "tty"
+    elseif choice == "3" then de = "gnome"
+    elseif choice == "4" then de = "plasma"
+    elseif choice == "5" then de = "xfce" end
     local f = fs.open("/etc/default-de", "w")
     if f then f.write(de); f.close() end
     setFG(C.ok)
@@ -727,7 +733,7 @@ local function main()
     print("  / /| |/ __/ / // (_-< /    / /_/ /    /  ")
     print(" /_/ |_|/_/  /_//_/___/___/  /____/_/|_/  ")
     setFG(C.accent)
-    print(" ArchOS-CC installer v1.1.0 - Arch style OS")
+    print(" ArchOS-CC installer v2.1.0 - Arch style OS")
     setFG(C.dim)
     print(" Repo: " .. GITHUB_USER .. "/" .. GITHUB_REPO .. " @" .. GITHUB_BRANCH)
     setFG(C.reset)
