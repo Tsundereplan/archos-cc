@@ -176,7 +176,7 @@ local MANIFEST = {
     "usr/bin/monitor-cast.lua",  -- new: cast screen to Monitor block
     "usr/bin/print.lua",  -- new: print files to Printer peripheral
     -- Desktop environments
-    "de/tty.lua", "de/gnome.lua", "de/plasma.lua", "de/xfce.lua", "de/gui.lua",
+    "de/tty.lua", "de/gui.lua",
     -- etc configs
     "etc/passwd", "etc/group", "etc/fstab", "etc/hostname",
     "etc/issue", "etc/network.conf", "etc/os-release",
@@ -689,19 +689,13 @@ local function firstBootPrompt()
     print("    1) gui      Unified GUI desktop (RECOMMENDED)")
     print("               Reads /etc/apps.conf for app list")
     print("    2) tty      Arch TTY (text only, minimal)")
-    print("    3) gnome    GNOME-like (simple GUI, legacy)")
-    print("    4) plasma   KDE Plasma-like (advanced GUI, legacy)")
-    print("    5) xfce     XFCE-like (lightweight GUI, legacy)")
     setFG(C.reset)
     setFG(C.accent)
-    term.write("  choice [1-5, default=1]: ")
+    term.write("  choice [1-2, default=1]: ")
     setFG(C.reset)
     local choice = read()
     local de = "gui"
-    if choice == "2" then de = "tty"
-    elseif choice == "3" then de = "gnome"
-    elseif choice == "4" then de = "plasma"
-    elseif choice == "5" then de = "xfce" end
+    if choice == "2" then de = "tty" end
     local f = fs.open("/etc/default-de", "w")
     if f then f.write(de); f.close() end
     setFG(C.ok)

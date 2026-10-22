@@ -1,40 +1,21 @@
 [version]
-1.7.0
+1.7.1
 [date]
 2026-10-22
 [whatsnew]
-- FIXED: Bootloader menu now shows correctly!
-  - Completely rewritten showMenu() with proper cursor positioning
-  - Items displayed with number prefix (1. archos, 2. craftos)
-  - Selected item highlighted with inverted colors
-  - Arrow keys + Enter OR number keys to select
-  - No more rendering glitches (old code mixed setCursorPos and write)
-- FIXED: CraftOS boot "loop in gettable" error!
-  - Old: tried to run vanilla shell via os.run(_G, shellPath) inside
-    ArchOS-CC's polluted _G → require() crashed
-  - New: craftos-shim moves /startup.lua to /startup.lua.bak and reboots
-    CC:T boots with NO startup.lua → pure vanilla shell with clean _G
-  - On next boot: startup.lua detects /tmp/restore-startup marker,
-    restores startup.lua.bak → /startup.lua, reboots back to ArchOS-CC
-- NEW: Installer self-update!
-  - Installer checks repo for newer version of installer.lua
-  - Extracts INSTALLER_VERSION constant from both local and remote
-  - If remote is newer: asks user, downloads, replaces, re-runs
-  - Ensures users always have the latest installer
-- NEW: Installer only downloads files from MANIFEST
-  - Does NOT download entire repo contents
-  - MANIFEST is a curated list of required files
-  - If repo has extra folders (programs/, etc.) they're NOT downloaded
-  - Users can create separate repos for extra programs
-- FIXED: Mouse Y coordinate (from v1.6.6)
-  - Was off by 1 (extra -1 in resumeMouse)
-  - All mouse clicks in windowed apps now land correctly
+- REMOVED: gnome.lua, xfce.lua, plasma.lua (3 legacy DEs deleted!)
+  - Only gui.lua and tty.lua remain
+  - Cleaner codebase, less disk space used
+  - installer MANIFEST updated (no more legacy DE downloads)
+  - installer DE choice simplified: 1=gui, 2=tty
+  - help.lua updated to show only gui and tty
+- FIX: Installer self-update check now properly compares versions
+  - INSTALLER_VERSION constant = "2.0.0" (was "1.0")
+  - If repo has newer installer.lua, asks to update before installing
+  - This ensures users always get the latest installer
 [/whatsnew]
 [files]
-bootloader/bootloader.lua
-startup.lua
-kernel/craftos-shim.lua
 installer.lua
-de/gui.lua
+bin/help.lua
 latest_update.upd
 [/files]

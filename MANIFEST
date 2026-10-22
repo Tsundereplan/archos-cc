@@ -63,11 +63,8 @@ bootloader/bootloader.lua
 bootloader/default
 bootloader/entries/archos.lua
 bootloader/entries/craftos.lua
-de/gnome.lua
 de/gui.lua
-de/plasma.lua
 de/tty.lua
-de/xfce.lua
 dev/.gitkeep
 docs/ARCHITECTURE.md
 docs/COMMANDS.md
