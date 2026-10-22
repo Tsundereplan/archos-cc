@@ -549,14 +549,45 @@ local function drawMenu()
         }
     elseif state.menuOpen == "apps" then
         menuX = 9
+        -- Categorize apps
+        local categories = {
+            {name = "--- System ---", apps = {}},
+            {name = "--- Apps ---", apps = {}},
+            {name = "--- Games ---", apps = {}},
+            {name = "--- Utils ---", apps = {}},
+        }
         for _, app in ipairs(state.apps) do
-            table.insert(items, {app.name, function()
-                local offset = #state.windows * 2
-                local win = Window.new(app, 5 + offset, 4 + offset)
-                win:start()
-                table.insert(state.windows, win)
-                state.activeWindow = win
-            end})
+            local lower = app.name:lower()
+            if lower:match("terminal") or lower:match("files") or
+               lower:match("editor") or lower:match("settings") or
+               lower:match("system") or lower:match("task") or
+               lower:match("monitor") or lower:match("update") or
+               lower:match("cleanup") then
+                table.insert(categories[1].apps, app)
+            elseif lower:match("paint") or lower:match("notes") or
+                   lower:match("calc") or lower:match("clock") or
+                   lower:match("music") or lower:match("player") or
+                   lower:match("web") or lower:match("browser") or
+                   lower:match("print") or lower:match("repl") then
+                table.insert(categories[2].apps, app)
+            else
+                table.insert(categories[4].apps, app)
+            end
+        end
+        -- Build menu items with category headers
+        for _, cat in ipairs(categories) do
+            if #cat.apps > 0 then
+                table.insert(items, {cat.name, nil})  -- header (nil = not clickable)
+                for _, app in ipairs(cat.apps) do
+                    table.insert(items, {"  " .. app.name, function()
+                        local offset = #state.windows * 2
+                        local win = Window.new(app, 5 + offset, 4 + offset)
+                        win:start()
+                        table.insert(state.windows, win)
+                        state.activeWindow = win
+                    end})
+                end
+            end
         end
     elseif state.menuOpen == "system" then
         menuX = 14
@@ -589,17 +620,47 @@ local function drawMenu()
     end
     local mw = 25
     local mh = #items + 2
+    local _, screenH = term.getSize()
+    -- If menu is too tall, split into multiple columns
+    if mh > screenH - 2 then
+        mh = screenH - 2
+    end
     box(menuX, 2, mw, mh, colors.lightGray)
     writeAt(menuX+1, 2, " "..state.menuOpen.." ", colors.lightGray, colors.black)
-    for i, item in ipairs(items) do
-        local label = item[1]
+    local maxRows = mh - 2
+    for i = 1, math.min(#items, maxRows) do
+        local item = items[i]
+        local label = item[1] or "?"
         if #label > mw-3 then label = label:sub(1, mw-3) end
-        writeAt(menuX+1, 2+i, " "..label..string.rep(" ", mw-#label-3), colors.lightGray, colors.black)
+        -- Header items (nil action) are shown in yellow
+        if item[2] == nil then
+            writeAt(menuX+1, 2+i, " "..label..string.rep(" ", mw-#label-3), colors.lightGray, colors.yellow)
+        else
+            writeAt(menuX+1, 2+i, " "..label..string.rep(" ", mw-#label-3), colors.lightGray, colors.black)
+        end
+    end
+    -- If there are more items than fit, draw a second column
+    if #items > maxRows then
+        local col2X = menuX + mw
+        local col2H = #items - maxRows + 2
+        box(col2X, 2, mw, col2H, colors.lightGray)
+        for i = maxRows+1, #items do
+            local item = items[i]
+            local label = item[1] or "?"
+            if #label > mw-3 then label = label:sub(1, mw-3) end
+            if item[2] == nil then
+                writeAt(col2X+1, 2+(i-maxRows), " "..label..string.rep(" ", mw-#label-3), colors.lightGray, colors.yellow)
+            else
+                writeAt(col2X+1, 2+(i-maxRows), " "..label..string.rep(" ", mw-#label-3), colors.lightGray, colors.black)
+            end
+        end
     end
     reset()
     state.menuItems = items
     state.menuX = menuX
     state.menuW = mw
+    state.menuCol2X = #items > maxRows and (menuX + mw) or nil
+    state.menuMaxRows = maxRows
 end
 
 local function drawContextMenu()
@@ -797,13 +858,34 @@ local function main()
 
                 -- Menu item click
                 if state.menuOpen and state.menuItems then
-                    if x >= state.menuX and x < state.menuX + state.menuW
-                       and y > 2 and y <= 2 + #state.menuItems then
+                    local maxRows = state.menuMaxRows or #state.menuItems
+                    local mw = state.menuW or 25
+                    local menuX = state.menuX or 1
+                    -- Column 1
+                    if x >= menuX and x < menuX + mw
+                       and y > 2 and y <= 2 + math.min(#state.menuItems, maxRows) then
                         local item = state.menuItems[y - 2]
-                        if item then
+                        if item and item[2] then
                             state.menuOpen = nil
                             state.menuItems = nil
                             item[2]()
+                        else
+                            -- Header item or out of range - just close menu
+                            state.menuOpen = nil
+                            state.menuItems = nil
+                        end
+                    -- Column 2 (if exists)
+                    elseif state.menuCol2X and x >= state.menuCol2X and x < state.menuCol2X + mw
+                       and y > 2 then
+                        local col2Idx = (y - 2) + maxRows
+                        local item = state.menuItems[col2Idx]
+                        if item and item[2] then
+                            state.menuOpen = nil
+                            state.menuItems = nil
+                            item[2]()
+                        else
+                            state.menuOpen = nil
+                            state.menuItems = nil
                         end
                     else
                         state.menuOpen = nil
@@ -992,9 +1074,11 @@ local function main()
                 if state.dragging then
                     state.dragging = nil
                 elseif state.activeWindow and state.activeWindow.alive then
-                    local _, _, x, y = unpack(event)
-                    if state.activeWindow:inContent(x, y) then
-                        state.activeWindow:resumeMouse("mouse_up", event[2], x, y)
+                    local upBtn = event[2]
+                    local upX = event[3]
+                    local upY = event[4]
+                    if upX and upY and state.activeWindow:inContent(upX, upY) then
+                        state.activeWindow:resumeMouse("mouse_up", upBtn, upX, upY)
                     end
                 end
                 return
@@ -1003,9 +1087,11 @@ local function main()
             -- Mouse scroll → active window
             if event[1] == "mouse_scroll" then
                 if state.activeWindow and state.activeWindow.alive then
-                    local _, _, _, x, y = unpack(event)
-                    if state.activeWindow:inContent(x, y) then
-                        state.activeWindow:resumeMouse("mouse_scroll", event[2], event[3], event[4])
+                    local scrollDir = event[2]
+                    local scrollX = event[3]
+                    local scrollY = event[4]
+                    if scrollX and scrollY and state.activeWindow:inContent(scrollX, scrollY) then
+                        state.activeWindow:resumeMouse("mouse_scroll", scrollDir, scrollX, scrollY)
                     end
                 end
                 return

@@ -1,28 +1,31 @@
 [version]
-1.6.3
+1.6.5
 [date]
 2026-10-22
 [whatsnew]
-- FIXED: Editor crash on empty lines (colors.darkGray doesn't exist!)
-  - Changed to colors.gray (darkGray is not a valid CC:T color)
-- FIXED: Pinestore install now handles "pastebin run <code>" format!
-  - install_command can be "wget run https://..." OR "pastebin run yR1dxgcE"
-  - Tries 3 strategies: HTTP URL → pastebin run → pastebin get
-  - Converts pastebin code to https://pastebin.com/raw/<code> and fetches
-- NEW: Pinestore auto-installs to floppy disk when local disk is full!
-  - Checks free space before install
-  - If < 100KB free AND disk drive with disk is attached:
-    - Changes CWD to /disk/ so install script writes there
-    - App is installed on the floppy disk
-    - Adds app to /etc/apps.conf so it shows in GUI
-  - If install fails with "out of space":
-    - Suggests inserting a floppy disk and retrying
-- NEW: After successful pinestore install, app is auto-added to apps.conf
-  - App name and path added to /etc/apps.conf
-  - Shows up in GUI desktop icons and Apps menu immediately
+- FIXED: Mouse scroll + mouse_up crashes (same unpack bug as before)
+  - mouse_up also used `local _,_,x,y = unpack(event)` (5 from 4)
+  - Now reads event[2], event[3], event[4] directly with nil checks
+- FIXED: Pinestore install "succeeds" but installs nothing
+  - Install scripts from pinestore.cc print "Out of space!" and exit
+    without raising a Lua error, so pcall returns true
+  - Now checks if any files were actually created after install
+  - If no files created: returns error "no files created (out of space?)"
+  - Also checks if files went to /disk (floppy disk)
+- NEW: Apps menu has CATEGORIES!
+  - System: Terminal, Files, Editor, Settings, System Monitor, etc.
+  - Apps: Paint, Notes, Calculator, Clock, Music, Web Browser, etc.
+  - Games: (for future pinestore game installs)
+  - Utils: everything else
+  - Category headers shown in yellow, non-clickable
+  - Apps under each header shown with indent
+- NEW: Menu multi-column support
+  - If apps list is too long for one column (taller than screen)
+  - Automatically splits into 2 columns side by side
+  - Both columns are clickable
 [/whatsnew]
 [files]
-usr/bin/editor.lua
+de/gui.lua
 bin/pinestore.lua
 latest_update.upd
 [/files]

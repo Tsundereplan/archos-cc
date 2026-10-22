@@ -160,7 +160,79 @@ function PineStore.install(appId)
     -- Execute the install script (it returns lua code)
     local fn, err = load(body, "pinestore-install", "t", _G)
     if not fn then return nil, "compile error: " .. tostring(err) end
-    return pcall(fn)
+
+    -- Record file list before install
+    local beforeFiles = {}
+    local function scanFiles(path, list)
+        if not fs.exists(path) then return end
+        if fs.isDir(path) then
+            for _, name in ipairs(fs.list(path)) do
+                scanFiles(path .. "/" .. name, list)
+            end
+        else
+            table.insert(list, path)
+        end
+    end
+    -- Only scan /programs and / (top-level)
+    if fs.exists("/programs") then scanFiles("/programs", beforeFiles) end
+
+    local ok, runErr = pcall(fn)
+
+    -- Check if any new files were created
+    local afterFiles = {}
+    if fs.exists("/programs") then scanFiles("/programs", afterFiles) end
+
+    local newFiles = 0
+    for _, f in ipairs(afterFiles) do
+        local found = false
+        for _, old in ipairs(beforeFiles) do
+            if old == f then found = true; break end
+        end
+        if not found then newFiles = newFiles + 1 end
+    end
+
+    if not ok then
+        return nil, "install script error: " .. tostring(runErr)
+    end
+
+    -- If no new files were created, the install probably failed silently
+    -- (e.g. "Out of space" printed but no Lua error thrown)
+    if newFiles == 0 then
+        -- Check if install script wrote to /disk (floppy disk)
+        local diskFiles = 0
+        local sides = {"top","bottom","left","right","front","back"}
+        for _, side in ipairs(sides) do
+            if peripheral.isPresent(side) and peripheral.getType(side) == "drive" then
+                local drive = peripheral.wrap(side)
+                if drive and drive.hasDisk then
+                    local ok2, has = pcall(drive.hasDisk)
+                    if ok2 and has then
+                        local mp = nil
+                        if drive.getMountPath then
+                            local ok3, p = pcall(drive.getMountPath)
+                            if ok3 and p then mp = p end
+                        end
+                        if not mp then
+                            for i = 0, 5 do
+                                local p = i == 0 and "/disk" or "/disk" .. (i + 1)
+                                if fs.exists(p) then mp = p; break end
+                            end
+                        end
+                        if mp then
+                            scanFiles(mp, {})
+                            -- Can't easily compare, just count
+                            diskFiles = diskFiles + 1
+                        end
+                    end
+                end
+            end
+        end
+        if diskFiles == 0 then
+            return nil, "install completed but no files were created (out of disk space?)"
+        end
+    end
+
+    return true
 end
 
 -- Normalize an app entry from the API response.
