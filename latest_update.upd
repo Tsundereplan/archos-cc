@@ -1,37 +1,17 @@
 [version]
-1.6.1
+1.6.2
 [date]
 2026-10-22
 [whatsnew]
-- FIXED: "Move to Monitor" now works properly!
-  - Window:_resume() now redirects to monitor.wrap (not just window)
-  - Context menu shows list of attached monitors with sizes
-  - "Send to <side>" redirects output to that monitor
-  - "Back to main screen" returns to window
-  - App output goes to monitor in real-time
-- CHANGED: File Manager keys moved from F-keys to number keys
-  - 2=Rename  4=Edit  5=Copy  6=Move  7=MkDir  8=Delete
-  - Tab=Switch pane  Q=Quit  (same as before)
-  - Bottom bar updated to show new key bindings
-- ADDED: Mouse support in more GUI apps!
-  - Editor: click to move cursor, scroll to page up/down
-  - Task Manager: click buttons, click process to select
-  - Settings: click categories, click options to toggle/cycle
-  - System Manager: click tabs, click list items to select
-  - Clock: click anywhere to quit
-  - System Monitor: click anywhere to quit
-  - Calculator, Paint, GBrowse: already had mouse support
-- IMPROVED: Window close button removes window from list immediately
-  (was leaving dead windows in the render list)
+- FIXED: update command (and all HTTP-using apps) now work in GUI windows!
+  - Root cause: GUI event loop swallowed http_success/http_failure events
+  - GUI only delivered key/char/mouse/timer events to windows
+  - Apps using http.request() (update, pinestore, webbrowser, wget)
+    hung forever waiting for http_success that never arrived
+  - Fix: added catch-all that delivers ANY unhandled event to active window
+  - This also fixes: websocket_*, peripheral, disk, rednet_message events
 [/whatsnew]
 [files]
 de/gui.lua
-usr/bin/filemanager.lua
-usr/bin/editor.lua
-usr/bin/taskmgr.lua
-usr/bin/settings.lua
-usr/bin/sysmgr.lua
-usr/bin/clock.lua
-usr/bin/system-monitor.lua
 latest_update.upd
 [/files]

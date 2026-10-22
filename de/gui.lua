@@ -1010,6 +1010,16 @@ local function main()
                 end
                 return
             end
+
+            -- CATCH-ALL: deliver any unhandled event to active window.
+            -- This includes: http_success, http_failure, websocket_*,
+            -- peripheral, peripheral_detach, disk, disk_eject, etc.
+            -- Without this, apps that use http.request() (like update,
+            -- pinestore, webbrowser, wget) would hang forever waiting
+            -- for http_success events that the GUI swallowed.
+            if state.activeWindow and state.activeWindow.alive then
+                state.activeWindow:_resume(event)
+            end
         end)
 
         if not ok then
