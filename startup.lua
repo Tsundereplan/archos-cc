@@ -42,19 +42,9 @@ if fs.exists("/tmp/restore-startup") then
     fs.delete("/tmp/restore-startup")
     if fs.exists("/startup.lua.bak") and not fs.exists("/startup.lua") then
         fs.move("/startup.lua.bak", "/startup.lua")
-        -- Now re-run ourselves (the real startup)
         os.reboot()
         return
     end
-end
-
--- Check for one-shot vanilla CraftOS boot marker
-if fs.exists("/tmp/boot-craftos-once") then
-    fs.delete("/tmp/boot-craftos-once")
-    -- We already moved startup.lua to .bak in craftos-shim.
-    -- Just reboot - CC:T will boot vanilla shell without startup.lua.
-    os.reboot()
-    return
 end
 
 -- Sanity check: is the bootloader present?

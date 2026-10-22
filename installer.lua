@@ -160,6 +160,7 @@ local MANIFEST = {
     "bin/install-to-disk.lua",  -- new: install OS to floppy disk
     "bin/internet.lua",  -- new: internet connection checker
     "bin/gui-to-monitor.lua",  -- new: GUI on external monitor
+    "bin/restore.lua",  -- new: restore system from backup
     -- sbin
     "sbin/init.lua", "sbin/fsck.lua", "sbin/mkfs.lua",
     "sbin/mkuser.lua", "sbin/networkd.lua", "sbin/mountd.lua",
@@ -509,10 +510,10 @@ local function postInstall()
     -- Write /etc/version so `update check` can compare
     local vf = fs.open("/etc/version", "w")
     if vf then
-        vf.write("1.7.1\n")
+        vf.write("1.7.2\n")
         vf.close()
         setFG(C.dim)
-        print("    + /etc/version (1.7.1)")
+        print("    + /etc/version (1.7.2)")
         setFG(C.reset)
     end
     setFG(C.ok)

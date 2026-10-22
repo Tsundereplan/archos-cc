@@ -1,17 +1,28 @@
 [version]
-1.7.1
+1.7.2
 [date]
 2026-10-22
 [whatsnew]
-- Removed self-update check (was causing problems when repo has old installer)
-- Removed gnome/xfce/plasma DEs (only gui + tty remain)
-- Fixed hardcoded version: installer now writes 1.7.1 to /etc/version
-- Installer MANIFEST cleaned up (no legacy DE files)
-- DE choice simplified: 1=gui, 2=tty
+- FIXED: Bootloader menu rendering (clean, no bugs)
+- FIXED: CraftOS boot (move startup.lua + reboot, no loop in gettable)
+- NEW: System restore from backup!
+  - Boot menu now has "Restore from Backup" option (entry 3)
+  - New command: restore (bin/restore.lua)
+  - restore --list: shows all backups (local + floppy disk)
+  - restore: interactive restore
+  - restore <path>: restore from specific path
+  - Works with backups from: update install, update backup, update backup disk
+- NEW: Restore option in GRUB boot menu
+  - Select "Restore from Backup" to enter restore mode
+  - Scans /backup/ and /disk/ for backup directories
+  - Shows list, user picks one, system files are restored
+  - Reboots after restore
 [/whatsnew]
 [files]
+bootloader/bootloader.lua
+startup.lua
+kernel/craftos-shim.lua
+bin/restore.lua
 installer.lua
-bin/help.lua
-etc/version
 latest_update.upd
 [/files]

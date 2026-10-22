@@ -41,6 +41,7 @@ bin/poweroff.lua
 bin/ps.lua
 bin/pwd.lua
 bin/reboot.lua
+bin/restore.lua
 bin/rm.lua
 bin/sh.lua
 bin/su.lua
