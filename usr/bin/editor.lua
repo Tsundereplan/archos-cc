@@ -552,6 +552,29 @@ local function main()
                     insertChar(c)
                 end
             end
+        elseif ev == "mouse_click" then
+            -- Click to move cursor
+            local _, mx, my = event[2], event[3], event[4]
+            -- Account for line number column (4 chars) + body start (y=2)
+            local newCol = mx - 4 + 1 + state.scrollX
+            local newY = my - 2 + 1 + state.scrollY
+            if newY >= 1 and newY <= #state.lines then
+                state.cursorY = newY
+                local line = state.lines[state.cursorY] or ""
+                state.cursorX = math.max(1, math.min(#line + 1, newCol))
+                adjustScroll()
+            end
+        elseif ev == "mouse_scroll" then
+            -- Scroll up/down
+            local dir = event[2]
+            if dir == -1 then
+                -- Scroll up
+                state.cursorY = math.max(1, state.cursorY - 3)
+            else
+                -- Scroll down
+                state.cursorY = math.min(#state.lines, state.cursorY + 3)
+            end
+            adjustScroll()
         end
     end
 end

@@ -144,6 +144,10 @@ local function main()
         local event = {os.pullEvent()}
         if event[1] == "key" and event[2] == keys.q then break end
         if event[1] == "char" and event[2] == "q" then break end
+        if event[1] == "mouse_click" then
+            -- Click anywhere = quit (simple)
+            break
+        end
         if event[1] == "timer" and event[2] == timer then
             -- continue loop
         end

@@ -243,6 +243,9 @@ local function main()
         -- Wait for key or timer
         local timer = os.startTimer(30)
         local event = {os.pullEvent()}
+        if event[1] == "mouse_click" then
+            break
+        end
         if event[1] == "key" then
             if event[2] == keys.q then break end
         elseif event[1] == "char" then

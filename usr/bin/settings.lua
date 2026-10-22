@@ -472,6 +472,41 @@ local function main()
                 end
                 break
             end
+        elseif ev == "mouse_click" then
+            local btn, mx, my = event[2], event[3], event[4]
+            local _, h = term.getSize()
+            -- Click on left pane (categories): x < 20
+            if mx <= 20 then
+                local catIdx = my - 2
+                if catIdx >= 1 and catIdx <= #categories then
+                    state.catIdx = catIdx
+                    state.optIdx = 1
+                    state.focus = "opt"
+                end
+            else
+                -- Click on right pane (options)
+                local optIdx = my - 2
+                local opts = optionsFor(categories[state.catIdx], state.cfg)
+                if optIdx >= 1 and optIdx <= #opts then
+                    state.optIdx = optIdx
+                    -- Activate the option (toggle/cycle/edit)
+                    local opt = opts[optIdx]
+                    if opt.type == "bool" then
+                        state.cfg[opt.key] = not state.cfg[opt.key]
+                        state.dirty = true
+                    elseif opt.type == "choice" then
+                        local idx = 1
+                        for i, v in ipairs(opt.choices) do
+                            if v == state.cfg[opt.key] then idx = i; break end
+                        end
+                        idx = idx % #opt.choices + 1
+                        state.cfg[opt.key] = opt.choices[idx]
+                        state.dirty = true
+                    elseif opt.type == "action" then
+                        opt.action()
+                    end
+                end
+            end
         end
     end
 

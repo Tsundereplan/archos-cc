@@ -1,33 +1,37 @@
 [version]
-1.6.0
+1.6.1
 [date]
 2026-10-22
 [whatsnew]
-- FIXED: Close button (X) now actually closes windows!
-  - Old code set alive=false but didn't remove from list immediately
-  - New code: removes window from state.windows list right away
-  - Window disappears instantly when X is clicked
-- FIXED: Logout now returns to GUI login (not text terminal!)
-  - init.lua no longer falls back to tty after DE exit
-  - GUI loop restarts, showing graphical login screen again
-- NEW: Double-click on desktop icons to open apps!
-  - Single click = select icon (visual feedback)
-  - Double-click within 0.5s = launch app in window
-  - Allows future drag-and-drop of icons (single click won't launch)
-- NEW: Right-click on windows → context menu!
-  - "Move to Monitor" — send window to attached Monitor block
-  - "Minimize" — minimize to taskbar
-  - "Maximize/Restore" — toggle fullscreen
-  - "Close" — close the window
-  - Click outside menu to dismiss
-- NEW: Window "Move to Monitor" in context menu
-  - If monitor is attached, sends window output to it
-  - Click again to bring window back to main screen
-  - This replaces the separate monitor-cast program for windows
-- GUI now properly handles context menu rendering and clicks
+- FIXED: "Move to Monitor" now works properly!
+  - Window:_resume() now redirects to monitor.wrap (not just window)
+  - Context menu shows list of attached monitors with sizes
+  - "Send to <side>" redirects output to that monitor
+  - "Back to main screen" returns to window
+  - App output goes to monitor in real-time
+- CHANGED: File Manager keys moved from F-keys to number keys
+  - 2=Rename  4=Edit  5=Copy  6=Move  7=MkDir  8=Delete
+  - Tab=Switch pane  Q=Quit  (same as before)
+  - Bottom bar updated to show new key bindings
+- ADDED: Mouse support in more GUI apps!
+  - Editor: click to move cursor, scroll to page up/down
+  - Task Manager: click buttons, click process to select
+  - Settings: click categories, click options to toggle/cycle
+  - System Manager: click tabs, click list items to select
+  - Clock: click anywhere to quit
+  - System Monitor: click anywhere to quit
+  - Calculator, Paint, GBrowse: already had mouse support
+- IMPROVED: Window close button removes window from list immediately
+  (was leaving dead windows in the render list)
 [/whatsnew]
 [files]
 de/gui.lua
-sbin/init.lua
+usr/bin/filemanager.lua
+usr/bin/editor.lua
+usr/bin/taskmgr.lua
+usr/bin/settings.lua
+usr/bin/sysmgr.lua
+usr/bin/clock.lua
+usr/bin/system-monitor.lua
 latest_update.upd
 [/files]

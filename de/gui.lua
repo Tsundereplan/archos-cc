@@ -158,7 +158,14 @@ function Window:_resume(event)
         self.alive = false
         return
     end
-    local oldRedirect = term.redirect(self.window)
+    -- If redirected to a monitor, redirect term there
+    -- Otherwise, redirect to the window object
+    local oldRedirect
+    if self.monitor then
+        oldRedirect = term.redirect(self.monitor.wrap)
+    else
+        oldRedirect = term.redirect(self.window)
+    end
     if event then
         coroutine.resume(self.coro, unpack(event))
     else
@@ -836,15 +843,40 @@ local function main()
                                     {"Move to Monitor", function()
                                         local monitors = findMonitors()
                                         if #monitors == 0 then
-                                            return -- no monitors
+                                            -- No monitors - show message
+                                            state.contextMenu = {
+                                                x = 5, y = 5,
+                                                items = {
+                                                    {"(no monitors attached)", function() end},
+                                                }
+                                            }
+                                            return
                                         end
-                                        if win.monitor then
+                                        -- Build submenu items for each monitor
+                                        local items = {}
+                                        for i, mon in ipairs(monitors) do
+                                            local w, h = mon.wrap.getSize()
+                                            items[#items+1] = {
+                                                "Send to " .. mon.side .. " ("..w.."x"..h..")",
+                                                function()
+                                                    win.monitor = mon
+                                                    mon.wrap.setBackgroundColor(colors.black)
+                                                    mon.wrap.setTextColor(colors.white)
+                                                    mon.wrap.clear()
+                                                    mon.wrap.setCursorPos(1, 1)
+                                                    -- Resume app on the monitor
+                                                    win:_resume()
+                                                end
+                                            }
+                                        end
+                                        items[#items+1] = {"Back to main screen", function()
                                             win.monitor = nil
-                                        else
-                                            win.monitor = monitors[1]
-                                            win.monitor.wrap.clear()
-                                            win.monitor.wrap.setCursorPos(1, 1)
-                                        end
+                                            win:_resume()
+                                        end}
+                                        state.contextMenu = {
+                                            x = 5, y = 5,
+                                            items = items,
+                                        }
                                     end},
                                     {"Minimize", function()
                                         win:minimize()
