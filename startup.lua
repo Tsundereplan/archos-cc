@@ -36,68 +36,23 @@ setColor(colors.gray)
 print("  startup -> bootloader")
 print("")
 
+-- Check for restore-startup marker (from craftos-shim)
+-- If /startup.lua was moved to .bak, restore it now.
+if fs.exists("/tmp/restore-startup") then
+    fs.delete("/tmp/restore-startup")
+    if fs.exists("/startup.lua.bak") and not fs.exists("/startup.lua") then
+        fs.move("/startup.lua.bak", "/startup.lua")
+        -- Now re-run ourselves (the real startup)
+        os.reboot()
+        return
+    end
+end
+
 -- Check for one-shot vanilla CraftOS boot marker
 if fs.exists("/tmp/boot-craftos-once") then
-    -- Delete the marker so next boot goes back to ArchOS-CC
     fs.delete("/tmp/boot-craftos-once")
-    setColor(colors.lightGray)
-    print("  Booting vanilla CraftOS shell (one-shot mode)...")
-    setColor(colors.white)
-    print("")
-    -- Find and launch the vanilla CraftOS shell directly
-    local shellPath = "/rom/programs/shell.lua"
-    if not fs.exists(shellPath) then
-        shellPath = "/rom/programs/shell"
-    end
-    if fs.exists(shellPath) then
-        -- IMPORTANT: ArchOS-CC has polluted _G with custom globals
-        -- (Kernel, Process, Scheduler, Events, BIOS, etc.) and
-        -- package.loaded may have references to them. The vanilla
-        -- shell's require() will hit "loop in gettable" if any of
-        -- these are still around. We must clean up first.
-
-        -- Remove ArchOS-CC specific globals
-        _G.Kernel       = nil
-        _G.Process      = nil
-        _G.Scheduler    = nil
-        _G.Events       = nil
-        _G.Permissions   = nil
-        _G.FS           = nil
-        _G.Users        = nil
-        _G.Crypto       = nil
-        _G.Network      = nil
-        _G.Drivers      = nil
-        _G.Pacman       = nil
-        _G.Systemd      = nil
-        _G.BIOS         = nil
-        _G.BOOT_CONTEXT = nil
-        _G.KERNEL_READY = nil
-        _G._ARCHOS_PROCESS = nil
-        _G._ARCHOS_SCHEDULER = nil
-        _G._ARCHOS_SYSCALL = nil
-        _G._ARCHOS_EVENTS = nil
-        _G.CRAFTOS_MODE = nil
-
-        -- Reset package.loaded to remove any cached ArchOS modules.
-        -- This forces vanilla shell to re-require everything fresh.
-        if package and package.loaded then
-            for k, _ in pairs(package.loaded) do
-                -- Keep only standard CC:T modules (cc.* and rom modules)
-                if not (k:match("^cc%.") or k:match("^rom%.") or k == "math" or k == "string" or k == "table" or k == "io" or k == "os" or k == "coroutine" or k == "_G") then
-                    package.loaded[k] = nil
-                end
-            end
-        end
-
-        -- Now run the vanilla shell with a clean-ish _G
-        os.run(_G, shellPath)
-    else
-        setColor(colors.red)
-        print("[startup] Could not find vanilla shell at " .. shellPath)
-        setColor(colors.white)
-    end
-    -- When the vanilla shell exits, reboot normally (back to ArchOS-CC)
-    os.sleep(1)
+    -- We already moved startup.lua to .bak in craftos-shim.
+    -- Just reboot - CC:T will boot vanilla shell without startup.lua.
     os.reboot()
     return
 end

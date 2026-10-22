@@ -330,30 +330,6 @@ local function main()
             elseif c == "w" then switchTo()
             elseif c == "r" then refreshData(); msg("Refreshed")
             end
-        elseif ev == "mouse_click" then
-            local btn, mx, my = event[2], event[3], event[4]
-            local _, h = term.getSize()
-            -- Click on buttons (bottom bar)
-            local btnW = math.floor(h > 0 and 20 or 15)
-            local btnY = h - 1
-            if my >= btnY - 1 and my <= btnY then
-                -- Roughly: 4 buttons, each ~12 chars wide starting at x=2
-                local btnIdx = math.ceil((mx - 1) / 12)
-                if btnIdx >= 1 and btnIdx <= 4 then
-                    state.btnSel = btnIdx
-                    if btnIdx == 1 then endTask()
-                    elseif btnIdx == 2 then switchTo()
-                    elseif btnIdx == 3 then refreshData(); msg("Refreshed")
-                    elseif btnIdx == 4 then break
-                    end
-                end
-            else
-                -- Click on process list = select process
-                local row = my - 4 + state.scroll
-                if row >= 1 and row <= #state.procs then
-                    state.selected = row
-                end
-            end
         end
     end
 

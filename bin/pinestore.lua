@@ -123,116 +123,21 @@ function PineStore.install(appId)
     if not installCommand or installCommand == "" then
         return nil, "project has no install_command"
     end
-
-    -- install_command can be:
-    --   "wget run https://example.com/install.lua"
-    --   "pastebin run yR1dxgcE"
-    -- Handle both formats.
-
-    local body = nil
-
-    -- Try 1: extract URL starting with http
+    -- install_command is like "wget run https://example.com/install.lua"
+    -- Extract the URL
     local installURL = installCommand:match("https?://%S+")
-    if installURL then
-        body = fetchURL(installURL)
-    end
-
-    -- Try 2: pastebin format "pastebin run <code>"
-    if not body then
-        local pasteCode = installCommand:match("pastebin%s+run%s+(%S+)")
-        if pasteCode then
-            body = fetchURL("https://pastebin.com/raw/" .. pasteCode)
-        end
-    end
-
-    -- Try 3: pastebin format "pastebin get <code> <dest>"
-    if not body then
-        local pasteCode = installCommand:match("pastebin%s+get%s+(%S+)")
-        if pasteCode then
-            body = fetchURL("https://pastebin.com/raw/" .. pasteCode)
-        end
-    end
-
-    if not body then
+    if not installURL then
         return nil, "could not extract URL from install_command: " .. installCommand
     end
-
+    -- Fetch the install script
+    local body = fetchURL(installURL)
+    if not body then
+        return nil, "failed to fetch install script from " .. installURL
+    end
     -- Execute the install script (it returns lua code)
     local fn, err = load(body, "pinestore-install", "t", _G)
     if not fn then return nil, "compile error: " .. tostring(err) end
-
-    -- Record file list before install
-    local beforeFiles = {}
-    local function scanFiles(path, list)
-        if not fs.exists(path) then return end
-        if fs.isDir(path) then
-            for _, name in ipairs(fs.list(path)) do
-                scanFiles(path .. "/" .. name, list)
-            end
-        else
-            table.insert(list, path)
-        end
-    end
-    -- Only scan /programs and / (top-level)
-    if fs.exists("/programs") then scanFiles("/programs", beforeFiles) end
-
-    local ok, runErr = pcall(fn)
-
-    -- Check if any new files were created
-    local afterFiles = {}
-    if fs.exists("/programs") then scanFiles("/programs", afterFiles) end
-
-    local newFiles = 0
-    for _, f in ipairs(afterFiles) do
-        local found = false
-        for _, old in ipairs(beforeFiles) do
-            if old == f then found = true; break end
-        end
-        if not found then newFiles = newFiles + 1 end
-    end
-
-    if not ok then
-        return nil, "install script error: " .. tostring(runErr)
-    end
-
-    -- If no new files were created, the install probably failed silently
-    -- (e.g. "Out of space" printed but no Lua error thrown)
-    if newFiles == 0 then
-        -- Check if install script wrote to /disk (floppy disk)
-        local diskFiles = 0
-        local sides = {"top","bottom","left","right","front","back"}
-        for _, side in ipairs(sides) do
-            if peripheral.isPresent(side) and peripheral.getType(side) == "drive" then
-                local drive = peripheral.wrap(side)
-                if drive and drive.hasDisk then
-                    local ok2, has = pcall(drive.hasDisk)
-                    if ok2 and has then
-                        local mp = nil
-                        if drive.getMountPath then
-                            local ok3, p = pcall(drive.getMountPath)
-                            if ok3 and p then mp = p end
-                        end
-                        if not mp then
-                            for i = 0, 5 do
-                                local p = i == 0 and "/disk" or "/disk" .. (i + 1)
-                                if fs.exists(p) then mp = p; break end
-                            end
-                        end
-                        if mp then
-                            scanFiles(mp, {})
-                            -- Can't easily compare, just count
-                            diskFiles = diskFiles + 1
-                        end
-                    end
-                end
-            end
-        end
-        if diskFiles == 0 then
-            return nil, "install completed but no files were created (out of disk space?)"
-        end
-    end
-
-    return true
+    return pcall(fn)
 end
 
 -- Normalize an app entry from the API response.
@@ -349,112 +254,15 @@ elseif sub == "install" then
         return 1
     end
 
-    -- Check available disk space BEFORE attempting install
-    local freeSpace = fs.getFreeSpace("/")
-    c(colors.gray, function() print("[pinestore] Free disk space: " .. tostring(freeSpace) .. " bytes") end)
-
-    -- Find attached disk drive with disk
-    local diskPath = nil
-    local diskSide = nil
-    local sides = {"top","bottom","left","right","front","back"}
-    for _, side in ipairs(sides) do
-        if peripheral.isPresent(side) and peripheral.getType(side) == "drive" then
-            local drive = peripheral.wrap(side)
-            if drive and drive.hasDisk then
-                local ok, has = pcall(drive.hasDisk)
-                if ok and has then
-                    -- Find mount path
-                    local mp = nil
-                    if drive.getMountPath then
-                        local ok2, p = pcall(drive.getMountPath)
-                        if ok2 and p then mp = p end
-                    end
-                    if not mp and drive.getDiskID then
-                        local ok2, id = pcall(drive.getDiskID)
-                        if ok2 and id ~= nil then
-                            mp = id == 0 and "/disk" or "/disk" .. (id + 1)
-                        end
-                    end
-                    if not mp then
-                        for i = 0, 10 do
-                            local p = i == 0 and "/disk" or "/disk" .. (i + 1)
-                            if fs.exists(p) then mp = p; break end
-                        end
-                    end
-                    if mp then
-                        diskPath = mp
-                        diskSide = side
-                        break
-                    end
-                end
-            end
-        end
-    end
-
-    -- If disk space is low and we have a disk, redirect install there
-    if freeSpace and freeSpace < 100000 and diskPath then
-        c(colors.yellow, function()
-            print("[pinestore] Low disk space! Installing to floppy disk at " .. diskPath)
-        end)
-        -- Change CWD to disk path so install script writes there
-        local oldCwd = _G.Kernel and _G.Kernel.getCwd() or "/"
-        if _G.Kernel then _G.Kernel.setCwd(diskPath) end
-        -- Also temporarily remap fs.open to write to disk
-        -- The install script usually writes to relative paths, so
-        -- changing CWD should be enough.
-        c(colors.cyan, function() io.write("[pinestore] Installing '" .. appId .. "' to " .. diskPath .. " ...\n") end)
-        local ok, err = PineStore.install(appId)
-        -- Restore CWD
-        if _G.Kernel then _G.Kernel.setCwd(oldCwd) end
-        if ok then
-            c(colors.green, function() print("[pinestore] Installed '" .. appId .. "' to " .. diskPath) end)
-            -- Add to apps.conf on local disk so it shows in GUI
-            local f = fs.open("/etc/apps.conf", "a")
-            if f then
-                f.write((project and project.name or appId) .. "|" .. diskPath .. "/" .. (project and project.name or appId) .. ".lua|?|lightBlue\n")
-                f.close()
-            end
-            return 0
-        end
-        c(colors.red, function()
-            io.stderr:write("[pinestore] install failed: " .. tostring(err or "unknown error") .. "\n")
-        end)
-        return 1
-    end
-
     c(colors.cyan, function() io.write("[pinestore] Installing '" .. appId .. "' ...\n") end)
     local ok, err = PineStore.install(appId)
     if ok then
         c(colors.green, function() print("[pinestore] Installed '" .. appId .. "' successfully.") end)
-        -- Try to add to apps.conf
-        local info = PineStore.info(appId)
-        if info and info.project then
-            local name = info.project.name or appId
-            local installPath = "/" .. name:lower():gsub("%s", "_")
-            local f = fs.open("/etc/apps.conf", "a")
-            if f then
-                f.write(name .. "|" .. installPath .. "/" .. name .. ".lua|?|lightBlue\n")
-                f.close()
-            end
-        end
         return 0
     end
     c(colors.red, function()
         io.stderr:write("[pinestore] install failed: " .. tostring(err or "unknown error") .. "\n")
     end)
-    -- If out of space, suggest disk
-    if tostring(err):lower():find("space") then
-        c(colors.yellow, function()
-            print("[pinestore] Out of disk space!")
-            if diskPath then
-                print("  Re-run: pinestore install " .. appId)
-                print("  (will auto-install to floppy disk at " .. diskPath .. ")")
-            else
-                print("  Insert a floppy disk and try again.")
-                print("  Or increase computer_space_limit in computercraft-server.toml")
-            end
-        end)
-    end
     return 1
 
 -- pinestore list

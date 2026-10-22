@@ -1,13 +1,10 @@
 --[[
-    ArchOS-CC Installer v1.1.0  -  Redesigned
+    ArchOS-CC Installer v2.0.0  -  Redesigned
     ==========================================
     Downloads and installs the ArchOS-CC operating system from GitHub.
 
-    Usage:
-        wget <url>/installer.lua /installer.lua
-        installer <github-user> <repo-name> [branch]
-
     Features:
+      * Self-update: checks repo for newer installer version
       * Compact banner that fits on 51-wide screens
       * Stage-based progress with ASCII boxes
       * Per-file progress bar (visible heartbeat during download)
@@ -15,7 +12,10 @@
       * Optional user account creation
       * Defensive colors (works on color and mono computers)
       * Async HTTP with timeouts (never hangs)
+      * Only downloads files listed in MANIFEST (not entire repo)
 ]]
+
+local INSTALLER_VERSION = "2.0.0"
 
 -- ============================================================
 --  Config
@@ -721,6 +721,61 @@ local function main()
         print("  No arguments - using official repo: " .. DEFAULT_USER .. "/" .. DEFAULT_REPO)
         setFG(C.reset)
         os.sleep(1)
+    end
+
+    -- SELF-UPDATE CHECK: download latest installer from repo and
+    -- compare. If repo version is newer, replace ourselves.
+    if http then
+        setFG(C.dim)
+        term.write("  Checking for installer updates ... ")
+        setFG(C.reset)
+        local remoteInstaller = fetchURL(GITHUB_RAW .. "installer.lua", 1, 8)
+        if remoteInstaller then
+            -- Extract version from remote installer
+            local remoteVer = remoteInstaller:match("INSTALLER_VERSION%s*=%s*\"([^\"]+)\"")
+            local localVer = INSTALLER_VERSION
+            -- Simple version compare
+            local function parseVer(v)
+                local parts = {}
+                for n in (v or "0"):gmatch("%d+") do table.insert(parts, tonumber(n)) end
+                return parts
+            end
+            local rp = parseVer(remoteVer)
+            local lp = parseVer(localVer)
+            local isNewer = false
+            for i = 1, math.max(#rp, #lp) do
+                if (rp[i] or 0) > (lp[i] or 0) then isNewer = true; break end
+            end
+            if isNewer then
+                setFG(C.warn)
+                print("NEW VERSION " .. (remoteVer or "?") .. " available!")
+                setFG(C.reset)
+                term.write("  Update installer? [Y/n] ")
+                local ans = read()
+                if ans:lower() ~= "n" then
+                    local f = fs.open("/installer.lua", "w")
+                    if f then
+                        f.write(remoteInstaller)
+                        f.close()
+                    end
+                    setFG(C.ok)
+                    print("  Installer updated! Re-running ...")
+                    setFG(C.reset)
+                    os.sleep(1)
+                    -- Re-run ourselves
+                    shell.run("/installer.lua", GITHUB_USER, GITHUB_REPO, GITHUB_BRANCH)
+                    return 0
+                end
+            else
+                setFG(C.ok)
+                print("OK (up to date)")
+                setFG(C.reset)
+            end
+        else
+            setFG(C.warn)
+            print("skip (no response)")
+            setFG(C.reset)
+        end
     end
 
     -- Banner (compact, fits 51-wide screens)

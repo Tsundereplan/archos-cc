@@ -1,22 +1,40 @@
 [version]
-1.6.6
+1.7.0
 [date]
 2026-10-22
 [whatsnew]
-- FIXED: Mouse Y coordinate was off by 1 in all windowed apps!
-  - Window:resumeMouse() had `relY = y - self.y - 1` (extra -1)
-  - The CC:T window at (self.x+1, self.y+1) means:
-    relX = sx - self.x, relY = sy - self.y (NO -1!)
-  - All mouse clicks were shifted up by 1 row → clicks hit wrong buttons
-  - Calculator buttons, editor cursor, file manager selection all broken
-  - Now fixed: clicks land exactly where they should
-- CHANGED: Terminal commands removed from Apps menu
-  - update, print, cleanup, internet, install-to-disk, help, mount,
-    hostname, pinestore, pacman are now filtered out
-  - Only GUI applications (Terminal, Files, Editor, etc.) appear
-  - Terminal commands are still available via the shell
+- FIXED: Bootloader menu now shows correctly!
+  - Completely rewritten showMenu() with proper cursor positioning
+  - Items displayed with number prefix (1. archos, 2. craftos)
+  - Selected item highlighted with inverted colors
+  - Arrow keys + Enter OR number keys to select
+  - No more rendering glitches (old code mixed setCursorPos and write)
+- FIXED: CraftOS boot "loop in gettable" error!
+  - Old: tried to run vanilla shell via os.run(_G, shellPath) inside
+    ArchOS-CC's polluted _G → require() crashed
+  - New: craftos-shim moves /startup.lua to /startup.lua.bak and reboots
+    CC:T boots with NO startup.lua → pure vanilla shell with clean _G
+  - On next boot: startup.lua detects /tmp/restore-startup marker,
+    restores startup.lua.bak → /startup.lua, reboots back to ArchOS-CC
+- NEW: Installer self-update!
+  - Installer checks repo for newer version of installer.lua
+  - Extracts INSTALLER_VERSION constant from both local and remote
+  - If remote is newer: asks user, downloads, replaces, re-runs
+  - Ensures users always have the latest installer
+- NEW: Installer only downloads files from MANIFEST
+  - Does NOT download entire repo contents
+  - MANIFEST is a curated list of required files
+  - If repo has extra folders (programs/, etc.) they're NOT downloaded
+  - Users can create separate repos for extra programs
+- FIXED: Mouse Y coordinate (from v1.6.6)
+  - Was off by 1 (extra -1 in resumeMouse)
+  - All mouse clicks in windowed apps now land correctly
 [/whatsnew]
 [files]
+bootloader/bootloader.lua
+startup.lua
+kernel/craftos-shim.lua
+installer.lua
 de/gui.lua
 latest_update.upd
 [/files]

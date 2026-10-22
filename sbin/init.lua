@@ -123,8 +123,11 @@ function Init.run()
             os.sleep(3)
         end
 
-        -- On DE exit, loop back and restart the same DE
-        -- (GUI will show login screen again, no need to fall back to tty)
+        -- On shell exit, if we're in tty mode, prompt for login again
+        if de ~= "tty" then
+            -- DE exited - reboot to TTY login
+            de = "tty"
+        end
     end
 end
 
