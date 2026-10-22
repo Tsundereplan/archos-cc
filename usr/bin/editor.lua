@@ -186,7 +186,7 @@ local function render()
         else
             term.setTextColor(colors.gray)
             term.write(string.format("%3d ", lineIdx))
-            term.setTextColor(colors.darkGray)
+            term.setTextColor(colors.gray)
             term.write("~")
         end
     end

@@ -1,17 +1,28 @@
 [version]
-1.6.2
+1.6.3
 [date]
 2026-10-22
 [whatsnew]
-- FIXED: update command (and all HTTP-using apps) now work in GUI windows!
-  - Root cause: GUI event loop swallowed http_success/http_failure events
-  - GUI only delivered key/char/mouse/timer events to windows
-  - Apps using http.request() (update, pinestore, webbrowser, wget)
-    hung forever waiting for http_success that never arrived
-  - Fix: added catch-all that delivers ANY unhandled event to active window
-  - This also fixes: websocket_*, peripheral, disk, rednet_message events
+- FIXED: Editor crash on empty lines (colors.darkGray doesn't exist!)
+  - Changed to colors.gray (darkGray is not a valid CC:T color)
+- FIXED: Pinestore install now handles "pastebin run <code>" format!
+  - install_command can be "wget run https://..." OR "pastebin run yR1dxgcE"
+  - Tries 3 strategies: HTTP URL → pastebin run → pastebin get
+  - Converts pastebin code to https://pastebin.com/raw/<code> and fetches
+- NEW: Pinestore auto-installs to floppy disk when local disk is full!
+  - Checks free space before install
+  - If < 100KB free AND disk drive with disk is attached:
+    - Changes CWD to /disk/ so install script writes there
+    - App is installed on the floppy disk
+    - Adds app to /etc/apps.conf so it shows in GUI
+  - If install fails with "out of space":
+    - Suggests inserting a floppy disk and retrying
+- NEW: After successful pinestore install, app is auto-added to apps.conf
+  - App name and path added to /etc/apps.conf
+  - Shows up in GUI desktop icons and Apps menu immediately
 [/whatsnew]
 [files]
-de/gui.lua
+usr/bin/editor.lua
+bin/pinestore.lua
 latest_update.upd
 [/files]
