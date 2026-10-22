@@ -3,19 +3,15 @@
 [date]
 2026-10-22
 [whatsnew]
-- REMOVED: gnome.lua, xfce.lua, plasma.lua (3 legacy DEs deleted!)
-  - Only gui.lua and tty.lua remain
-  - Cleaner codebase, less disk space used
-  - installer MANIFEST updated (no more legacy DE downloads)
-  - installer DE choice simplified: 1=gui, 2=tty
-  - help.lua updated to show only gui and tty
-- FIX: Installer self-update check now properly compares versions
-  - INSTALLER_VERSION constant = "2.0.0" (was "1.0")
-  - If repo has newer installer.lua, asks to update before installing
-  - This ensures users always get the latest installer
+- Removed self-update check (was causing problems when repo has old installer)
+- Removed gnome/xfce/plasma DEs (only gui + tty remain)
+- Fixed hardcoded version: installer now writes 1.7.1 to /etc/version
+- Installer MANIFEST cleaned up (no legacy DE files)
+- DE choice simplified: 1=gui, 2=tty
 [/whatsnew]
 [files]
 installer.lua
 bin/help.lua
+etc/version
 latest_update.upd
 [/files]

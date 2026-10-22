@@ -509,10 +509,10 @@ local function postInstall()
     -- Write /etc/version so `update check` can compare
     local vf = fs.open("/etc/version", "w")
     if vf then
-        vf.write("1.1.2\n")
+        vf.write("1.7.1\n")
         vf.close()
         setFG(C.dim)
-        print("    + /etc/version (1.1.2)")
+        print("    + /etc/version (1.7.1)")
         setFG(C.reset)
     end
     setFG(C.ok)
@@ -715,61 +715,6 @@ local function main()
         print("  No arguments - using official repo: " .. DEFAULT_USER .. "/" .. DEFAULT_REPO)
         setFG(C.reset)
         os.sleep(1)
-    end
-
-    -- SELF-UPDATE CHECK: download latest installer from repo and
-    -- compare. If repo version is newer, replace ourselves.
-    if http then
-        setFG(C.dim)
-        term.write("  Checking for installer updates ... ")
-        setFG(C.reset)
-        local remoteInstaller = fetchURL(GITHUB_RAW .. "installer.lua", 1, 8)
-        if remoteInstaller then
-            -- Extract version from remote installer
-            local remoteVer = remoteInstaller:match("INSTALLER_VERSION%s*=%s*\"([^\"]+)\"")
-            local localVer = INSTALLER_VERSION
-            -- Simple version compare
-            local function parseVer(v)
-                local parts = {}
-                for n in (v or "0"):gmatch("%d+") do table.insert(parts, tonumber(n)) end
-                return parts
-            end
-            local rp = parseVer(remoteVer)
-            local lp = parseVer(localVer)
-            local isNewer = false
-            for i = 1, math.max(#rp, #lp) do
-                if (rp[i] or 0) > (lp[i] or 0) then isNewer = true; break end
-            end
-            if isNewer then
-                setFG(C.warn)
-                print("NEW VERSION " .. (remoteVer or "?") .. " available!")
-                setFG(C.reset)
-                term.write("  Update installer? [Y/n] ")
-                local ans = read()
-                if ans:lower() ~= "n" then
-                    local f = fs.open("/installer.lua", "w")
-                    if f then
-                        f.write(remoteInstaller)
-                        f.close()
-                    end
-                    setFG(C.ok)
-                    print("  Installer updated! Re-running ...")
-                    setFG(C.reset)
-                    os.sleep(1)
-                    -- Re-run ourselves
-                    shell.run("/installer.lua", GITHUB_USER, GITHUB_REPO, GITHUB_BRANCH)
-                    return 0
-                end
-            else
-                setFG(C.ok)
-                print("OK (up to date)")
-                setFG(C.reset)
-            end
-        else
-            setFG(C.warn)
-            print("skip (no response)")
-            setFG(C.reset)
-        end
     end
 
     -- Banner (compact, fits 51-wide screens)
