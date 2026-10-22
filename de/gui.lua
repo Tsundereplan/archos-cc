@@ -177,13 +177,16 @@ function Window:_resume(event)
     end
 end
 
--- Resume with a mouse event, translating to inner window coords
+-- Resume with a mouse event, translating to inner window coords.
+-- The CC:T window object is created at (self.x+1, self.y+1), so:
+--   relX = sx - (self.x+1) + 1 = sx - self.x
+--   relY = sy - (self.y+1) + 1 = sy - self.y
+-- (NO extra -1! That was the bug causing all mouse clicks to be off by 1.)
 function Window:resumeMouse(eventType, btn, x, y)
     if not self.alive then return end
-    -- Translate to inner window coordinates
-    local relX = x - self.x  -- -1 for left border → 0-based → +1 for inner
-    local relY = y - self.y - 1  -- -1 for title bar
-    -- Clamp check: only deliver if inside inner area
+    local relX = x - self.x
+    local relY = y - self.y
+    -- Clamp: only deliver if inside inner content area
     if relX < 1 or relX > self.width - 2 then return end
     if relY < 1 or relY > self.height - 2 then return end
     self:_resume({eventType, btn, relX, relY})
@@ -558,20 +561,27 @@ local function drawMenu()
         }
         for _, app in ipairs(state.apps) do
             local lower = app.name:lower()
-            if lower:match("terminal") or lower:match("files") or
-               lower:match("editor") or lower:match("settings") or
-               lower:match("system") or lower:match("task") or
-               lower:match("monitor") or lower:match("update") or
-               lower:match("cleanup") then
-                table.insert(categories[1].apps, app)
-            elseif lower:match("paint") or lower:match("notes") or
-                   lower:match("calc") or lower:match("clock") or
-                   lower:match("music") or lower:match("player") or
-                   lower:match("web") or lower:match("browser") or
-                   lower:match("print") or lower:match("repl") then
-                table.insert(categories[2].apps, app)
-            else
-                table.insert(categories[4].apps, app)
+            -- Skip terminal-only commands (they're in /bin, meant for shell)
+            local isTerminalCmd = lower:match("update") or lower:match("print") or
+                lower:match("cleanup") or lower:match("internet") or
+                lower:match("install") or lower:match("help") or
+                lower:match("mount") or lower:match("hostname") or
+                lower:match("pinestore") or lower:match("pacman")
+            if not isTerminalCmd then
+                if lower:match("terminal") or lower:match("files") or
+                   lower:match("editor") or lower:match("settings") or
+                   lower:match("system") or lower:match("task") or
+                   lower:match("monitor") then
+                    table.insert(categories[1].apps, app)
+                elseif lower:match("paint") or lower:match("notes") or
+                       lower:match("calc") or lower:match("clock") or
+                       lower:match("music") or lower:match("player") or
+                       lower:match("web") or lower:match("browser") or
+                       lower:match("repl") then
+                    table.insert(categories[2].apps, app)
+                else
+                    table.insert(categories[4].apps, app)
+                end
             end
         end
         -- Build menu items with category headers
