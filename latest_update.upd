@@ -1,24 +1,33 @@
 [version]
-1.5.3
+1.6.0
 [date]
-2026-10-21
+2026-10-22
 [whatsnew]
-- FIXED: Close button (X) now works!
-  - Button positions were misaligned: X was drawn at width-2 but
-    onCloseButton checked width-1. Also MaxButton overlapped Close.
-  - Fixed: X at width-1, M at width-2, _ at width-3 (all 1 char each)
-  - All three buttons (minimize/maximize/close) now respond correctly
-- IMPROVED: Update with floppy disk support
-  - When disk space is low, updater now:
-    1. Checks for attached disk drive with floppy disk
-    2. If found: copies old files to /disk/update-backup/ then deletes them
-    3. If no disk: deletes old files directly (no backup)
-    4. Downloads new files into freed space
-  - This means updates work even with very little free disk space
-  - Old files on floppy can be manually restored if update fails
+- FIXED: Close button (X) now actually closes windows!
+  - Old code set alive=false but didn't remove from list immediately
+  - New code: removes window from state.windows list right away
+  - Window disappears instantly when X is clicked
+- FIXED: Logout now returns to GUI login (not text terminal!)
+  - init.lua no longer falls back to tty after DE exit
+  - GUI loop restarts, showing graphical login screen again
+- NEW: Double-click on desktop icons to open apps!
+  - Single click = select icon (visual feedback)
+  - Double-click within 0.5s = launch app in window
+  - Allows future drag-and-drop of icons (single click won't launch)
+- NEW: Right-click on windows → context menu!
+  - "Move to Monitor" — send window to attached Monitor block
+  - "Minimize" — minimize to taskbar
+  - "Maximize/Restore" — toggle fullscreen
+  - "Close" — close the window
+  - Click outside menu to dismiss
+- NEW: Window "Move to Monitor" in context menu
+  - If monitor is attached, sends window output to it
+  - Click again to bring window back to main screen
+  - This replaces the separate monitor-cast program for windows
+- GUI now properly handles context menu rendering and clicks
 [/whatsnew]
 [files]
 de/gui.lua
-sbin/updater.lua
+sbin/init.lua
 latest_update.upd
 [/files]

@@ -446,6 +446,8 @@ local state = {
     clock = "00:00",
     running = true,
     dragging = nil,
+    contextMenu = nil,
+    lastIconClick = nil,  -- for double-click detection
 }
 
 -- ============================================================
@@ -593,6 +595,26 @@ local function drawMenu()
     state.menuW = mw
 end
 
+local function drawContextMenu()
+    if not state.contextMenu then return end
+    local cm = state.contextMenu
+    local w, h = term.getSize()
+    local mw = 22
+    local mh = #cm.items + 2
+    local mx = math.min(cm.x, w - mw)
+    local my = math.min(cm.y, h - mh)
+    -- Shadow
+    box(mx+1, my+1, mw, mh, colors.gray)
+    -- Menu
+    box(mx, my, mw, mh, colors.lightGray)
+    for i, item in ipairs(cm.items) do
+        local label = item[1]
+        if #label > mw - 3 then label = label:sub(1, mw - 3) end
+        writeAt(mx+1, my+i, " " .. label .. string.rep(" ", mw - #label - 3), colors.lightGray, colors.black)
+    end
+    reset()
+end
+
 local function render()
     local w, h = term.getSize()
     box(1, 1, w, h, colors.black)
@@ -606,6 +628,7 @@ local function render()
     drawTaskbar()
     if state.menuOpen then drawMenu() end
     if state.runDialogOpen then drawRunDialog() end
+    if state.contextMenu then drawContextMenu() end
 end
 
 -- ============================================================
@@ -733,6 +756,24 @@ local function main()
                 local btn, x, y = event[2], event[3], event[4]
                 local w, h = term.getSize()
 
+                -- Context menu open: check if click is on a menu item
+                if state.contextMenu then
+                    local cm = state.contextMenu
+                    local mw = 22
+                    local mh = #cm.items + 2
+                    local mx = math.min(cm.x, w - mw)
+                    local my = math.min(cm.y, h - mh)
+                    if x >= mx and x < mx + mw and y > my and y <= my + #cm.items then
+                        local item = cm.items[y - my]
+                        if item then
+                            item[2]()  -- execute action
+                        end
+                    end
+                    -- Close context menu regardless
+                    state.contextMenu = nil
+                    return
+                end
+
                 -- Menu bar
                 if y == 1 then
                     if x >= 2 and x <= 7 then
@@ -782,6 +823,60 @@ local function main()
                     return
                 end
 
+                -- RIGHT-CLICK (button 2) on a window → context menu
+                if btn == 2 then
+                    for i = #state.windows, 1, -1 do
+                        local win = state.windows[i]
+                        if not win.minimized and win:contains(x, y) then
+                            -- Show context menu for this window
+                            state.contextMenu = {
+                                window = win,
+                                x = x, y = y,
+                                items = {
+                                    {"Move to Monitor", function()
+                                        local monitors = findMonitors()
+                                        if #monitors == 0 then
+                                            return -- no monitors
+                                        end
+                                        if win.monitor then
+                                            win.monitor = nil
+                                        else
+                                            win.monitor = monitors[1]
+                                            win.monitor.wrap.clear()
+                                            win.monitor.wrap.setCursorPos(1, 1)
+                                        end
+                                    end},
+                                    {"Minimize", function()
+                                        win:minimize()
+                                        state.activeWindow = nil
+                                    end},
+                                    {"Maximize/Restore", function()
+                                        win:toggleMaximize()
+                                    end},
+                                    {"Close", function()
+                                        win.alive = false
+                                        if win.window and win.window.setVisible then
+                                            win.window.setVisible(false)
+                                        end
+                                        for j = #state.windows, 1, -1 do
+                                            if state.windows[j] == win then
+                                                table.remove(state.windows, j)
+                                                break
+                                            end
+                                        end
+                                        if state.activeWindow == win then
+                                            state.activeWindow = nil
+                                        end
+                                    end},
+                                }
+                            }
+                            return
+                        end
+                    end
+                    return
+                end
+
+                -- LEFT-CLICK (button 1) on a window
                 -- Check windows (front to back)
                 for i = #state.windows, 1, -1 do
                     local win = state.windows[i]
@@ -792,7 +887,21 @@ local function main()
                         state.activeWindow = win
 
                         if win:onCloseButton(x, y) then
-                            win:close()
+                            -- Close: remove window IMMEDIATELY
+                            win.alive = false
+                            if win.window and win.window.setVisible then
+                                win.window.setVisible(false)
+                            end
+                            -- Remove from list
+                            for j = #state.windows, 1, -1 do
+                                if state.windows[j] == win then
+                                    table.remove(state.windows, j)
+                                    break
+                                end
+                            end
+                            if state.activeWindow == win then
+                                state.activeWindow = state.windows[#state.windows] or nil
+                            end
                         elseif win:onMinButton(x, y) then
                             win:minimize()
                             state.activeWindow = nil
@@ -810,16 +919,26 @@ local function main()
                     end
                 end
 
-                -- Desktop icon click
+                -- Desktop icon: DOUBLE-CLICK to open (single click = select)
                 for i, app in ipairs(state.apps) do
                     local ix = 2
                     local iy = 3 + (i-1)*4
                     if x >= ix and x <= ix+3 and y >= iy and y <= iy+2 then
-                        local offset = #state.windows * 2
-                        local win = Window.new(app, 5+offset, 4+offset)
-                        win:start()
-                        table.insert(state.windows, win)
-                        state.activeWindow = win
+                        -- Check for double-click
+                        local now = os.clock()
+                        if state.lastIconClick and state.lastIconClick.idx == i
+                           and (now - state.lastIconClick.time) < 0.5 then
+                            -- Double-click: launch app
+                            local offset = #state.windows * 2
+                            local win = Window.new(app, 5+offset, 4+offset)
+                            win:start()
+                            table.insert(state.windows, win)
+                            state.activeWindow = win
+                            state.lastIconClick = nil
+                        else
+                            -- Single click: select icon (just remember)
+                            state.lastIconClick = {idx=i, time=now}
+                        end
                         return
                     end
                 end
